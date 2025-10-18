@@ -1,0 +1,38 @@
+{
+  "version": "2025-10-18",
+  "arena": {
+    "radiusPx": 10000,
+    "safeSpawnRadiusPx": 9600
+  },
+  "player": {
+    "baseSpeed": 2.4,
+    "boostMultiplier": 1.75,
+    "boostDrainPerSec": 12,
+    "turnRateDegPerSec": 210,
+    "collisionRadius": 16
+  },
+  "coins": {
+    "growthGold": 0.3,
+  "growthSilver": 0.2,
+  "growthBronze": 0.15,
+  "crashDropValueRatio": 0.5
+  },
+  "sleepers": {
+    "startCountPlayerPerScore": 0.02,
+    "startCountBotPerScore": 0.015
+  },
+  "visual": {
+    "glowIntensity": 1.0,
+    "flareLengthMultiplier": 1.0
+  },
+  "bounty": {
+    "goldenTrainBonus": 0.2,
+    "cashoutTiers": [10, 100, 1000, 10000],
+    "cashoutPercent": 0.10
+  },
+  "net": {
+    "tickMs": 50,
+    "snapshotRateHz": 20,
+    "interpLerp": 0.25
+  }
+}
