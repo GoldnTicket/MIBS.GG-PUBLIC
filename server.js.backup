@@ -1,0 +1,60 @@
+const express = require('express');
+const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http);
+
+const PORT = 3000;
+
+app.use(express.static('public'));
+
+const gameState = {
+  players: {},
+  peewees: []
+};
+
+function randomPosition() {
+  return {
+    x: Math.random() * 4000 - 2000,
+    y: Math.random() * 4000 - 2000
+  };
+}
+
+io.on('connection', (socket) => {
+  console.log('Player connected:', socket.id);
+  
+  const pos = randomPosition();
+  gameState.players[socket.id] = {
+    id: socket.id,
+    name: 'Player',
+    x: pos.x,
+    y: pos.y,
+    angle: 0,
+    lengthScore: 30
+  };
+  
+  socket.emit('init', {
+    playerId: socket.id,
+    players: gameState.players
+  });
+  
+  socket.on('playerMove', (data) => {
+    if (gameState.players[socket.id]) {
+      gameState.players[socket.id].x = data.x;
+      gameState.players[socket.id].y = data.y;
+      gameState.players[socket.id].angle = data.angle;
+    }
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('Player disconnected:', socket.id);
+    delete gameState.players[socket.id];
+  });
+});
+
+setInterval(() => {
+  io.emit('gameState', { players: gameState.players });
+}, 1000 / 60);
+
+http.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
