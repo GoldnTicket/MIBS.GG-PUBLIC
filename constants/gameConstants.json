@@ -1,3 +1,4 @@
+
 {
   "version": "1.0.0",
   "arena": {
@@ -32,7 +33,14 @@
   "cashout": {
     "cashoutX": 20,
     "cashoutY": 20,
-    "enabled": false
+    "cashoutWidth": 220,
+    "enabled": false,
+    "tiers": [
+      { "value": 2, "color": "0x00ff00" },
+      { "value": 5, "color": "0xffff00" },
+      { "value": 10, "color": "0xff8800" },
+      { "value": 20, "color": "0xff0000" }
+    ]
   },
   "zoom": {
     "lerpPer60": 0.1
