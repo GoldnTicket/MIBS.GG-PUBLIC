@@ -386,10 +386,12 @@ for (let i = 0; i < coinsToSpawn; i++) {
     // It's a player
     delete gameState.players[marble.id];
     
-    // Notify client of death
-    io.to(marble.id).emit('playerDeath', {
+  io.to(marble.id).emit('playerDeath', {
       killerId: killerId,
-      bountyLost: dropInfo.bountyValue
+      bountyLost: dropInfo.bountyValue,
+      x: marble.x,
+      y: marble.y,
+      marbleType: marble.marbleType
     });
   }
   
