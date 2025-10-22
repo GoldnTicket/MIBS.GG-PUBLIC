@@ -20,12 +20,11 @@ const corsOptions = {
   methods: ['GET', 'POST']
 };
 
-app.use(cors(corsOptions));
+// app.use(cors(corsOptions));  // Disabled - nginx handles CORS
 app.use(express.json());
 
-// Socket.IO setup
 const io = socketIO(server, {
-  cors: corsOptions,
+  // cors: corsOptions,  // Disabled - nginx handles CORS
   pingTimeout: 60000,
   pingInterval: 25000
 });
