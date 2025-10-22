@@ -29,6 +29,17 @@
   "golden": {
     "growthDropMultiplier": 2.0
   },
+  "cashout": {
+    "cashoutX": 20,
+    "cashoutY": 20,
+    "enabled": false
+  },
+  "zoom": {
+    "lerpPer60": 0.1
+  },
+  "face": {
+    "offsetScaleMultiplier": 0.7
+  },
   "peewee": {
     "dropValueMultiplier": 2.0,
     "rollEnabled": true,
