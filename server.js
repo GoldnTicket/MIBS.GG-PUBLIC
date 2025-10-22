@@ -489,12 +489,14 @@ socket.on('playerMove', (data) => {
   const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
   const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
   
-  if (distFromCenter + marbleRadius < gameConstants.arena.radius) {
+if (distFromCenter + marbleRadius < gameConstants.arena.radius) {
     player.x = data.x;
     player.y = data.y;
     player.angle = data.angle;
     player.pathBuffer.add(player.x, player.y);
     player.lastUpdate = Date.now();
+  } else {
+    console.log(`🚫 REJECTED move from ${socket.id.substring(0,8)}: distance ${distFromCenter.toFixed(0)} + radius ${marbleRadius.toFixed(0)} = ${(distFromCenter + marbleRadius).toFixed(0)} > arena ${gameConstants.arena.radius}`);
   }
 });
 
