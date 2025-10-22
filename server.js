@@ -475,11 +475,11 @@ io.on('connection', (socket) => {
   });
 
 socket.on('playerMove', (data) => {
-  if (!this._moveCount) this._moveCount = 0;
-  this._moveCount++;
+  if (!socket._moveCount) socket._moveCount = 0;
+  socket._moveCount++;
   
-  if (this._moveCount % 60 === 0) {
-    console.log(`📥 Received playerMove #${this._moveCount}`);
+  if (socket._moveCount % 60 === 0) {
+    console.log(`📥 Server received playerMove #${socket._moveCount}`);
   }
   
   const player = gameState.players[socket.id];
