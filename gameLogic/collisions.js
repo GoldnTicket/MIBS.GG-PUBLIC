@@ -1,5 +1,6 @@
 // MIBS.GG-PUBLIC/gameLogic/collisions.js
 // Server-side collision detection with PathBuffer body segments
+// FIXED: Better spawn distribution, tighter collision detection
 
 /**
  * Calculate marble radius based on length score
@@ -22,7 +23,7 @@ function getMarbleCollisionBodies(marble, gameConstants) {
   bodies.push({
     x: marble.x,
     y: marble.y,
-    r: radius * 0.99,
+    r: radius,  // FIXED: Use full radius, not 0.99
     owner: marble,
     type: 'leadMarble'
   });
@@ -39,7 +40,7 @@ function getMarbleCollisionBodies(marble, gameConstants) {
       bodies.push({
         x: sample.x,
         y: sample.y,
-        r: radius * 0.95,
+        r: radius * 0.98,  // FIXED: Tighter body collision (was 0.95)
         owner: marble,
         type: 'segment',
         order: i
@@ -61,44 +62,65 @@ function circlesCollide(x1, y1, r1, x2, y2, r2) {
 }
 
 /**
- * Find safe spawn location (not too close to other marbles)
+ * FIXED: Find safe spawn location with better distribution
+ * Creates 3 zones (inner, middle, outer ring) and tries outer ring first
  */
 function findSafeSpawn(gameState, minDistance, arenaRadius) {
   const maxAttempts = 50;
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    // Random position in arena
-    const angle = Math.random() * Math.PI * 2;
-    const distance = Math.random() * arenaRadius * 0.7; // Stay away from edge
-    
-    const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance;
-    
-    // Check if too close to any marble
-    let tooClose = false;
-    for (const marble of allMarbles) {
-      const dx = x - marble.x;
-      const dy = y - marble.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+  // FIXED: Define spawn zones - prefer outer ring for more space
+  const zones = [
+    { minDist: arenaRadius * 0.5, maxDist: arenaRadius * 0.85, attempts: 30 },  // Outer ring (most attempts)
+    { minDist: arenaRadius * 0.25, maxDist: arenaRadius * 0.5, attempts: 15 },  // Middle ring
+    { minDist: 0, maxDist: arenaRadius * 0.25, attempts: 5 }  // Inner ring (least attempts)
+  ];
+  
+  for (const zone of zones) {
+    for (let attempt = 0; attempt < zone.attempts; attempt++) {
+      // Random position in this zone
+      const angle = Math.random() * Math.PI * 2;
+      const distance = zone.minDist + Math.random() * (zone.maxDist - zone.minDist);
       
-      if (dist < minDistance) {
-        tooClose = true;
-        break;
+      const x = Math.cos(angle) * distance;
+      const y = Math.sin(angle) * distance;
+      
+      // FIXED: Check if too close to ANY marble
+      let tooClose = false;
+      for (const marble of allMarbles) {
+        const dx = x - marble.x;
+        const dy = y - marble.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        // FIXED: Add marble radius to minimum distance
+        const marbleRadius = calculateMarbleRadius(marble.lengthScore || 100, gameState.constants || { 
+          player: { startLength: 100, widthVsLengthMult: 0.5 }, 
+          marble: { shooterTargetWidth: 40 } 
+        });
+        
+        if (dist < minDistance + marbleRadius) {
+          tooClose = true;
+          break;
+        }
       }
-    }
-    
-    if (!tooClose) {
-      return { x, y };
+      
+      if (!tooClose) {
+        return { x, y };
+      }
     }
   }
   
-  // Fallback: spawn at center
-  return { x: 0, y: 0 };
+  // Fallback: spawn at edge (better than center for avoiding crowding)
+  const fallbackAngle = Math.random() * Math.PI * 2;
+  const fallbackDist = arenaRadius * 0.7;
+  return { 
+    x: Math.cos(fallbackAngle) * fallbackDist, 
+    y: Math.sin(fallbackAngle) * fallbackDist 
+  };
 }
 
 /**
- * Check all marble collisions (marble vs marble)
+ * FIXED: Check all marble collisions with tighter detection
  * Returns array of { killerId, victimId } for each collision
  */
 function checkCollisions(gameState, gameConstants) {
