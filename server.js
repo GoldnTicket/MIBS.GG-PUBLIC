@@ -313,11 +313,11 @@ function checkCoinCollisions() {
         
 // Remove coin (don't respawn - growth cap will manage total coins)
 gameState.coins.splice(i, 1);
-break;}
+break;
       }
     }
   }
-
+}
 
 /**
  * Handle marble death - drop coins and remove marble
