@@ -1,27 +1,49 @@
 {
-  "version": "1.0.0", 
- 
-"peewee": {
-  "dropValueMultiplier": 2.0,
-  "rollEnabled": true,
-  "rollDurationMin": 1000,
-  "rollDurationMax": 3000,
-  "rollFriction": 0.885,
-  "initialRollSpeedMin": 100,
-  "initialRollSpeedMax": 200,
-  "rollCurveChance": 0.8,
-  "minRollSpeed": 15,
-  "collisionEnabled": true,
-  "bounceFactor": 0.8,
-  "shadowEnabled": true,
-  "shadowOffsetY": 16,
-  "shadowAlpha": 0.9,
-  "squashFactor": 0.99,
-  "radius": 15,
-  "targetWidth": 30,
-  "growthValue": 1,
-  "suctionRadius": 150,
-  "suctionStrength": 300,
-  "returnSpeed": 100
-}
+  "version": "1.0.0",
+  "arena": {
+    "radius": 3000,
+    "spawnMinDistance": 200
+  },
+  "movement": {
+    "normalSpeed": 250,
+    "boostMultiplier": 1.6,
+    "turnSpeed": 4.5
+  },
+  "player": {
+    "startLength": 100,
+    "startBounty": 1,
+    "widthVsLengthMult": 1.0
+  },
+  "bot": {
+    "startLength": 100,
+    "startBounty": 4,
+    "startBountyMax": 12
+  },
+  "marble": {
+    "shooterTargetWidth": 30
+  },
+  "peewee": {
+    "dropValueMultiplier": 2.0,
+    "rollEnabled": true,
+    "rollDurationMin": 1000,
+    "rollDurationMax": 3000,
+    "rollFriction": 0.885,
+    "initialRollSpeedMin": 100,
+    "initialRollSpeedMax": 200,
+    "rollCurveChance": 0.8,
+    "minRollSpeed": 15,
+    "collisionEnabled": true,
+    "bounceFactor": 0.8,
+    "shadowEnabled": true,
+    "shadowOffsetY": 16,
+    "shadowAlpha": 0.9,
+    "squashFactor": 0.99,
+    "radius": 15,
+    "targetWidth": 30,
+    "growthValue": 1,
+    "bountyValue": 1,
+    "suctionRadius": 150,
+    "suctionStrength": 300,
+    "returnSpeed": 100
+  }
 }
