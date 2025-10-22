@@ -474,7 +474,14 @@ io.on('connection', (socket) => {
     console.log(`✅ Player ${data.name} joined at (${Math.floor(spawnPos.x)}, ${Math.floor(spawnPos.y)})`);
   });
 
-  socket.on('playerMove', (data) => {
+socket.on('playerMove', (data) => {
+  if (!this._moveCount) this._moveCount = 0;
+  this._moveCount++;
+  
+  if (this._moveCount % 60 === 0) {
+    console.log(`📥 Received playerMove #${this._moveCount}`);
+  }
+  
   const player = gameState.players[socket.id];
   if (!player || !player.alive) return;
   
