@@ -119,9 +119,17 @@ function spawnBot(id) {
 /**
  * Spawn a coin/peewee at random location
  */
+/**
+ * Spawn a coin/peewee at random location - WITH LIMIT CHECK
+ */
 function spawnCoin() {
+  // CRITICAL: Don't spawn if we're at or over limit
+  if (gameState.coins.length >= MAX_COINS) {
+    return;
+  }
+  
   const angle = Math.random() * Math.PI * 2;
-  const distance = Math.random() * gameConstants.arena.radius * 0.85; // Keep away from edge
+  const distance = Math.random() * gameConstants.arena.radius * 0.85;
   
   const coin = {
     id: `coin_${Date.now()}_${Math.random()}`,
@@ -175,8 +183,7 @@ function updateBotAI(bot, delta) {
   
   if (dist > 50) {
     bot.angle = Math.atan2(dy, dx);
-    const speed = gameConstants.movement.normalSpeed * (delta / 16.67);
-    bot.vx = Math.cos(bot.angle) * speed;
+const speed = gameConstants.movement.normalSpeed * (delta / 1000);    bot.vx = Math.cos(bot.angle) * speed;
     bot.vy = Math.sin(bot.angle) * speed;
     
     // Update position
@@ -211,7 +218,7 @@ function updateBotAI(bot, delta) {
   
   // Randomly boost
   if (Math.random() < 0.005) {
-    bot.boosting = true;
+    bot.boosting = false;
     setTimeout(() => { if (bot.alive) bot.boosting = false; }, 500);
   }
 }
@@ -305,14 +312,13 @@ function checkCoinCollisions() {
           marble.lengthScore += 10;
         }
         
-        // Remove coin and respawn
-        gameState.coins.splice(i, 1);
-        spawnCoin();
-        break;
+// Remove coin (don't respawn - growth cap will manage total coins)
+gameState.coins.splice(i, 1);
+break;}
       }
     }
   }
-}
+
 
 /**
  * Handle marble death - drop coins and remove marble
@@ -327,9 +333,11 @@ function killMarble(marble, killerId) {
   // Calculate drops
   const dropInfo = calculateBountyDrop(marble, gameConstants);
   
-  // Drop coins at death location
-  const numCoins = Math.min(20, Math.floor(dropInfo.totalValue / 10));
-  for (let i = 0; i < numCoins; i++) {
+// Drop coins at death location (only if below cap)
+const numCoins = Math.min(20, Math.floor(dropInfo.totalValue / 10));
+const coinsToSpawn = Math.min(numCoins, MAX_COINS - gameState.coins.length);
+
+for (let i = 0; i < coinsToSpawn; i++) {
     const angle = (i / numCoins) * Math.PI * 2;
     const distance = 50 + Math.random() * 100;
     
@@ -467,38 +475,22 @@ io.on('connection', (socket) => {
     console.log(`✅ Player ${data.name} joined at (${Math.floor(spawnPos.x)}, ${Math.floor(spawnPos.y)})`);
   });
 
-  // Player movement - WITH VALIDATION
   socket.on('playerMove', (data) => {
-    const player = gameState.players[socket.id];
-    if (!player || !player.alive) return;
-
-    // Validate movement (prevent teleporting/cheating)
-    const dx = data.x - player.x;
-    const dy = data.y - player.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const maxSpeed = gameConstants.movement.normalSpeed * gameConstants.movement.boostMultiplier * 2; // Allow some margin
-    const maxDist = maxSpeed * 0.1; // Max distance per update (assuming 10 updates/sec)
-    
-    if (dist < maxDist) {
-      // Check if new position is in arena
-      const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
-      const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
-      
-      if (distFromCenter + marbleRadius < gameConstants.arena.radius) {
-        player.x = data.x;
-        player.y = data.y;
-        player.angle = data.angle;
-        player.pathBuffer.add(player.x, player.y);
-        player.lastUpdate = Date.now();
-      } else {
-        // Tried to move outside arena - reject movement
-        console.log(`⚠️  ${player.name} attempted to move outside arena`);
-      }
-    } else {
-      // Movement too large - possible cheating
-      console.log(`⚠️  ${player.name} suspicious movement: ${dist.toFixed(0)}px`);
-    }
-  });
+  const player = gameState.players[socket.id];
+  if (!player || !player.alive) return;
+  
+  // Only validate arena bounds (no distance checking)
+  const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
+  const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
+  
+  if (distFromCenter + marbleRadius < gameConstants.arena.radius) {
+    player.x = data.x;
+    player.y = data.y;
+    player.angle = data.angle;
+    player.pathBuffer.add(player.x, player.y);
+    player.lastUpdate = Date.now();
+  }
+});
 
   // Player boost
   socket.on('playerBoost', () => {
