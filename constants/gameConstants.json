@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.0", {
  
-"peewee": {
+"peewee": 
   "dropValueMultiplier": 2.0,
   "rollEnabled": true,
   "rollDurationMin": 1000,
@@ -23,4 +23,5 @@
   "suctionRadius": 150,
   "suctionStrength": 300,
   "returnSpeed": 100
+}
 }
