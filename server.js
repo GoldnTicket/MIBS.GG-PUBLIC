@@ -1,12 +1,21 @@
-// MIBS.GG-PUBLIC/server.js - COMPLETE FIXED VERSION
+// MIBS.GG-PUBLIC/server.js - COMPLETE WORLD-CLASS VERSION
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 const cors = require('cors');
 
+// Load game constants - SINGLE SOURCE OF TRUTH
 const gameConstants = require('./constants/gameConstants.json');
 
+// Import game logic modules
+const { updateMovement, calculateMarbleRadius, wrapAngle } = require('./gameLogic/movement.js');
+const { calculateBountyDrop, getRankFromKills, calculateDropDistribution } = require('./gameLogic/bountyCalc.js');
+const { findSafeSpawn, checkCollisions, getMarbleCollisionBodies } = require('./gameLogic/collisions.js');
+
+// ============================================================================
+// PATHBUFFER CLASS - Smooth trail tracking
+// ============================================================================
 class PathBuffer {
   constructor(sampleDistance = 2) {
     this.samples = [];
@@ -47,17 +56,14 @@ class PathBuffer {
   }
 
   sampleAt(distance) {
-    if (this.samples.length === 0) {
-      return { x: 0, y: 0, angle: 0 };
-    }
-    if (this.samples.length === 1) {
-      return { ...this.samples[0], angle: 0 };
-    }
+    if (this.samples.length === 0) return { x: 0, y: 0, angle: 0 };
+    if (this.samples.length === 1) return { ...this.samples[0], angle: 0 };
     
     distance = Math.max(0, Math.min(this.totalLength, distance));
     
     let left = 0;
     let right = this.samples.length - 1;
+    
     while (left < right - 1) {
       const mid = Math.floor((left + right) / 2);
       if (this.samples[mid].dist < distance) {
@@ -70,9 +76,7 @@ class PathBuffer {
     const s1 = this.samples[left];
     const s2 = this.samples[right];
     
-    if (s2.dist === s1.dist) {
-      return { ...s1, angle: 0 };
-    }
+    if (s2.dist === s1.dist) return { ...s1, angle: 0 };
     
     const t = (distance - s1.dist) / (s2.dist - s1.dist);
     const x = s1.x + (s2.x - s1.x) * t;
@@ -85,49 +89,157 @@ class PathBuffer {
   sampleBack(distFromEnd) {
     return this.sampleAt(this.totalLength - distFromEnd);
   }
+
+  getTotalLength() {
+    return this.totalLength;
+  }
 }
 
-function calculateMarbleRadius(lengthScore, constants) {
-  const C = constants;
-  const extra = Math.max(0, lengthScore - C.player.startLength);
-  const growFrac = extra / Math.max(1, 1000 * C.player.widthVsLengthMult);
-  return (C.marble.shooterTargetWidth * 0.5) * (1 + growFrac);
-}
+// ============================================================================
+// SPATIAL GRID - For efficient collision detection
+// ============================================================================
+class SpatialGrid {
+  constructor(cellSize, bounds) {
+    this.cellSize = cellSize;
+    this.bounds = bounds; // { minX, minY, maxX, maxY }
+    this.grid = new Map();
+  }
 
-function getMarbleCollisionBodies(marble, gameConstants) {
-  const bodies = [];
-  const radius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-  
-  bodies.push({
-    x: marble.x,
-    y: marble.y,
-    r: radius,
-    owner: marble,
-    type: 'leadMarble'
-  });
-  
-  if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
-    const segmentSpacing = 20;
-    const bodyLength = marble.lengthScore * 2;
-    const numSegments = Math.floor(bodyLength / segmentSpacing);
+  clear() {
+    this.grid.clear();
+  }
+
+  _getKey(x, y) {
+    const cellX = Math.floor(x / this.cellSize);
+    const cellY = Math.floor(y / this.cellSize);
+    return `${cellX},${cellY}`;
+  }
+
+  insert(x, y, entity) {
+    const key = this._getKey(x, y);
+    if (!this.grid.has(key)) {
+      this.grid.set(key, []);
+    }
+    this.grid.get(key).push(entity);
+  }
+
+  queryRadius(x, y, radius) {
+    const results = [];
+    const cellRadius = Math.ceil(radius / this.cellSize);
+    const centerCellX = Math.floor(x / this.cellSize);
+    const centerCellY = Math.floor(y / this.cellSize);
+
+    for (let dx = -cellRadius; dx <= cellRadius; dx++) {
+      for (let dy = -cellRadius; dy <= cellRadius; dy++) {
+        const key = `${centerCellX + dx},${centerCellY + dy}`;
+        if (this.grid.has(key)) {
+          results.push(...this.grid.get(key));
+        }
+      }
+    }
+
+    return results;
+  }
+
+  insertMarble(marble) {
+    const radius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+    this.insert(marble.x, marble.y, marble);
     
-    for (let i = 1; i <= Math.min(numSegments, 100); i++) {
-      const sample = marble.pathBuffer.sampleBack(i * segmentSpacing);
+    // Also insert body segments for better collision detection
+    if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+      const segmentSpacing = 20;
+      const bodyLength = marble.lengthScore * 2;
+      const numSegments = Math.floor(bodyLength / segmentSpacing);
       
-      bodies.push({
-        x: sample.x,
-        y: sample.y,
-        r: radius * 0.98,
-        owner: marble,
-        type: 'segment',
-        order: i
-      });
+      for (let i = 1; i <= Math.min(numSegments, 50); i++) {
+        const sample = marble.pathBuffer.sampleBack(i * segmentSpacing);
+        this.insert(sample.x, sample.y, { ...marble, isSegment: true, segmentIndex: i });
+      }
     }
   }
-  
-  return bodies;
 }
 
+// ============================================================================
+// GAME STATE
+// ============================================================================
+const gameState = {
+  players: {},
+  coins: [],
+  bots: [],
+  lastUpdate: Date.now(),
+  spatialGrid: null
+};
+
+// ============================================================================
+// CONSTANTS & CONFIGURATION
+// ============================================================================
+const MAX_BOTS = gameConstants.bot.count || 20;
+const MAX_COINS = 200;
+const TICK_RATE = 1000 / 60; // 60 FPS server tick
+const BROADCAST_RATE = 1000 / 20; // 20 FPS broadcast to clients
+const SPATIAL_GRID_SIZE = gameConstants.collision.gridSizePx || 64;
+
+const BOT_NAMES = [
+  'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
+  'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant',
+  'SteelBall', 'VelocityVixen', 'OrbitOps', 'RoundRanger', 'SpinDoctor',
+  'BallBlitz', 'RollerRiot', 'MarbleMayhem', 'SphereStorm', 'BounceKnight'
+];
+
+const MARBLE_TYPES = Object.values(gameConstants.pickupThemes)
+  .filter(theme => theme.isShooter)
+  .map(theme => theme.key);
+
+// ============================================================================
+// EXPRESS & SOCKET.IO SETUP
+// ============================================================================
+const app = express();
+const server = http.createServer(app);
+
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  credentials: true,
+  methods: ['GET', 'POST']
+};
+
+app.use(cors(corsOptions));
+app.use(express.json());
+
+// CRITICAL: Proper Socket.io configuration for stability
+const io = socketIO(server, {
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  cors: corsOptions,
+  transports: ['websocket', 'polling']
+});
+
+// ============================================================================
+// API ENDPOINTS
+// ============================================================================
+app.get('/api/constants', (req, res) => {
+  res.json({
+    ...gameConstants,
+    version: gameConstants.version || '1.0.1-combined-fixed'
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    players: Object.keys(gameState.players).length,
+    bots: gameState.bots.length,
+    coins: gameState.coins.length,
+    uptime: process.uptime()
+  });
+});
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Circle collision check
+ */
 function circlesCollide(x1, y1, r1, x2, y2, r2) {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -135,146 +247,9 @@ function circlesCollide(x1, y1, r1, x2, y2, r2) {
   return dist < (r1 + r2);
 }
 
-// IMPROVED: Better spawn distribution
-function findSafeSpawn(gameState, minDistance, arenaRadius) {
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
-  
-  const zones = [
-    { minDist: arenaRadius * 0.6, maxDist: arenaRadius * 0.85, attempts: 30 },
-    { minDist: arenaRadius * 0.35, maxDist: arenaRadius * 0.6, attempts: 30 },
-    { minDist: arenaRadius * 0.1, maxDist: arenaRadius * 0.35, attempts: 30 }
-  ];
-  
-  const effectiveMinDistance = minDistance * 2.0;
-  
-  for (const zone of zones) {
-    for (let attempt = 0; attempt < zone.attempts; attempt++) {
-      const angle = Math.random() * Math.PI * 2;
-      const distance = zone.minDist + Math.random() * (zone.maxDist - zone.minDist);
-      
-      const x = Math.cos(angle) * distance;
-      const y = Math.sin(angle) * distance;
-      
-      let tooClose = false;
-      for (const marble of allMarbles) {
-        const dx = x - marble.x;
-        const dy = y - marble.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        const marbleRadius = calculateMarbleRadius(marble.lengthScore || 100, gameConstants);
-        
-        if (dist < effectiveMinDistance + marbleRadius * 2) {
-          tooClose = true;
-          break;
-        }
-      }
-      
-      if (!tooClose) {
-        return { x, y };
-      }
-    }
-  }
-  
-  const fallbackAngle = Math.random() * Math.PI * 2;
-  const fallbackDist = arenaRadius * (0.4 + Math.random() * 0.4);
-  
-  console.log(`⚠️ Using fallback spawn location`);
-  
-  return { 
-    x: Math.cos(fallbackAngle) * fallbackDist, 
-    y: Math.sin(fallbackAngle) * fallbackDist 
-  };
-}
-
-function checkCollisions(gameState, gameConstants) {
-  const results = [];
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
-  
-  const marbleBodies = new Map();
-  for (const marble of allMarbles) {
-    marbleBodies.set(marble.id, getMarbleCollisionBodies(marble, gameConstants));
-  }
-  
-  for (let i = 0; i < allMarbles.length; i++) {
-    for (let j = i + 1; j < allMarbles.length; j++) {
-      const marble1 = allMarbles[i];
-      const marble2 = allMarbles[j];
-      
-      if (!marble1.alive || !marble2.alive) continue;
-      
-      const bodies1 = marbleBodies.get(marble1.id);
-      const bodies2 = marbleBodies.get(marble2.id);
-      
-      let collision = null;
-      
-      const head1 = bodies1[0];
-      for (let k = 1; k < bodies2.length; k++) {
-        const segment2 = bodies2[k];
-        if (circlesCollide(head1.x, head1.y, head1.r, segment2.x, segment2.y, segment2.r)) {
-          collision = { killerId: marble2.id, victimId: marble1.id };
-          break;
-        }
-      }
-      
-      if (collision) {
-        results.push(collision);
-        continue;
-      }
-      
-      const head2 = bodies2[0];
-      for (let k = 1; k < bodies1.length; k++) {
-        const segment1 = bodies1[k];
-        if (circlesCollide(head2.x, head2.y, head2.r, segment1.x, segment1.y, segment1.r)) {
-          collision = { killerId: marble1.id, victimId: marble2.id };
-          break;
-        }
-      }
-      
-      if (collision) {
-        results.push(collision);
-        continue;
-      }
-      
-      if (circlesCollide(head1.x, head1.y, head1.r, head2.x, head2.y, head2.r)) {
-        const bounty1 = marble1.bounty || 0;
-        const bounty2 = marble2.bounty || 0;
-        
-        if (bounty1 > bounty2) {
-          results.push({ killerId: marble1.id, victimId: marble2.id });
-        } else if (bounty2 > bounty1) {
-          results.push({ killerId: marble2.id, victimId: marble1.id });
-        } else {
-          results.push({ killerId: null, victimId: marble1.id });
-          results.push({ killerId: null, victimId: marble2.id });
-        }
-      }
-    }
-  }
-  
-  return results;
-}
-
-function calculateBountyDrop(victim, constants) {
-  const isGolden = victim.isGolden || false;
-  const growthMult = isGolden ? constants.golden.growthDropMultiplier : 1.0;
-  
-  const totalDropValue = 
-    victim.lengthScore * constants.collision.dropValueMultiplier * constants.collision.growthDroppedPercent * growthMult;
-  
-  return {
-    totalValue: totalDropValue,
-    bountyValue: victim.bounty || 1,
-    isGolden: isGolden,
-    position: { x: victim.x, y: victim.y }
-  };
-}
-
-function wrapAngle(angle) {
-  while (angle > Math.PI) angle -= Math.PI * 2;
-  while (angle < -Math.PI) angle += Math.PI * 2;
-  return angle;
-}
-
+/**
+ * Check if path to target is safe (no threats)
+ */
 function isPathSafe(bot, targetX, targetY, gameState, gameConstants) {
   const checkSteps = 10;
   const stepSize = 20;
@@ -296,11 +271,13 @@ function isPathSafe(bot, targetX, targetY, gameState, gameConstants) {
     const checkX = bot.x + dirX * stepSize * i;
     const checkY = bot.y + dirY * stepSize * i;
     
+    // Check arena bounds
     const distFromCenter = Math.sqrt(checkX * checkX + checkY * checkY);
     if (distFromCenter + marbleRadius > gameConstants.arena.radius - 50) {
       return false;
     }
     
+    // Check for threatening marbles
     for (const other of allMarbles) {
       const otherRadius = calculateMarbleRadius(other.lengthScore, gameConstants);
       
@@ -308,12 +285,14 @@ function isPathSafe(bot, targetX, targetY, gameState, gameConstants) {
       const headDy = checkY - other.y;
       const headDist = Math.sqrt(headDx * headDx + headDy * headDy);
       
+      // Avoid larger marbles
       if (headDist < marbleRadius + otherRadius + 30) {
         if (other.lengthScore > bot.lengthScore * 1.2) {
           return false;
         }
       }
       
+      // Check body segments
       if (other.pathBuffer && other.pathBuffer.samples.length > 1) {
         const segmentSpacing = 20;
         const bodyLength = other.lengthScore * 2;
@@ -336,13 +315,16 @@ function isPathSafe(bot, targetX, targetY, gameState, gameConstants) {
   return true;
 }
 
-function findNearestCoin(bot, gameState) {
+/**
+ * Find nearest coin to a marble
+ */
+function findNearestCoin(marble, gameState) {
   let nearest = null;
   let minDist = Infinity;
   
   for (const coin of gameState.coins) {
-    const dx = coin.x - bot.x;
-    const dy = coin.y - bot.y;
+    const dx = coin.x - marble.x;
+    const dy = coin.y - marble.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     
     if (dist < minDist) {
@@ -354,16 +336,17 @@ function findNearestCoin(bot, gameState) {
   return nearest;
 }
 
-// IMPROVED: Much smarter threat detection
+/**
+ * Check if bot is in danger from larger marbles
+ */
 function isInDanger(bot, gameState, gameConstants) {
   const marbleRadius = calculateMarbleRadius(bot.lengthScore, gameConstants);
-  const dangerRadius = marbleRadius + 200; // Increased awareness range
+  const dangerRadius = marbleRadius + 200;
   
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
     .filter(m => m.alive && m.id !== bot.id);
   
   for (const other of allMarbles) {
-    // IMPROVED: Be aware of anyone larger, not just 20% larger
     if (other.lengthScore < bot.lengthScore * 0.7) continue;
     
     const dx = other.x - bot.x;
@@ -376,7 +359,6 @@ function isInDanger(bot, gameState, gameConstants) {
         const angleToUs = Math.atan2(dy, dx);
         const angleDiff = Math.abs(wrapAngle(theirAngle - angleToUs));
         
-        // IMPROVED: Larger cone of awareness
         if (angleDiff < Math.PI / 2) {
           return { 
             danger: true, 
@@ -392,7 +374,13 @@ function isInDanger(bot, gameState, gameConstants) {
   return { danger: false };
 }
 
-// IMPROVED: Smarter bot AI
+// ============================================================================
+// BOT AI SYSTEM
+// ============================================================================
+
+/**
+ * Update bot AI behavior
+ */
 function updateBotAI(bot, delta) {
   if (!bot._aiState) {
     bot._aiState = 'HUNT_COIN';
@@ -401,7 +389,7 @@ function updateBotAI(bot, delta) {
   
   bot._stateTimer += delta;
   
-  // IMPROVED: Always check for danger first
+  // Always check for danger first
   const dangerCheck = isInDanger(bot, gameState, gameConstants);
   
   if (dangerCheck.danger) {
@@ -413,13 +401,13 @@ function updateBotAI(bot, delta) {
     const dist = Math.sqrt(dx * dx + dy * dy);
     
     if (dist > 1) {
-      // IMPROVED: Smarter evasion - perpendicular escape
+      // Perpendicular escape
       const escapeAngle = Math.atan2(dy, dx) + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
       bot.targetX = bot.x + Math.cos(escapeAngle) * 400;
       bot.targetY = bot.y + Math.sin(escapeAngle) * 400;
     }
   } else {
-    if (bot._aiState === 'EVADE' && bot._stateTimer > 1500) { // Faster recovery
+    if (bot._aiState === 'EVADE' && bot._stateTimer > 1500) {
       bot._aiState = 'HUNT_COIN';
       bot._stateTimer = 0;
     }
@@ -440,14 +428,14 @@ function updateBotAI(bot, delta) {
         bot._stateTimer = 0;
       }
       
-      if (bot._stateTimer > 4000) { // Faster state change
+      if (bot._stateTimer > 4000) {
         bot._aiState = 'WANDER';
         bot._stateTimer = 0;
       }
     }
     
     if (bot._aiState === 'WANDER' || !bot.targetX) {
-      if (bot._stateTimer > 1500 || !bot.targetX) { // Faster wandering
+      if (bot._stateTimer > 1500 || !bot.targetX) {
         let attempts = 0;
         let foundSafe = false;
         
@@ -467,7 +455,7 @@ function updateBotAI(bot, delta) {
         bot._stateTimer = 0;
       }
       
-      if (bot._stateTimer > 2500) { // Faster return to hunting
+      if (bot._stateTimer > 2500) {
         bot._aiState = 'HUNT_COIN';
         bot._stateTimer = 0;
       }
@@ -480,13 +468,19 @@ function updateBotAI(bot, delta) {
   const dist = Math.sqrt(dx * dx + dy * dy);
   
   if (dist > 20) {
-    bot.angle = Math.atan2(dy, dx);
+    const targetAngle = Math.atan2(dy, dx);
     const speed = gameConstants.movement.normalSpeed * (delta / 1000);
-    bot.vx = Math.cos(bot.angle) * speed;
-    bot.vy = Math.sin(bot.angle) * speed;
     
-    const newX = bot.x + bot.vx;
-    const newY = bot.y + bot.vy;
+    // Smooth angle transition
+    let angleDiff = wrapAngle(targetAngle - bot.angle);
+    const maxTurn = Math.PI * (delta / 1000) * 2; // Slower bot turning
+    angleDiff = Math.max(-maxTurn, Math.min(maxTurn, angleDiff));
+    
+    bot.angle = wrapAngle(bot.angle + angleDiff);
+    
+    // Move forward
+    const newX = bot.x + Math.cos(bot.angle) * speed;
+    const newY = bot.y + Math.sin(bot.angle) * speed;
     
     const marbleRadius = calculateMarbleRadius(bot.lengthScore, gameConstants);
     const distFromCenter = Math.sqrt(newX * newX + newY * newY);
@@ -496,6 +490,7 @@ function updateBotAI(bot, delta) {
       bot.y = newY;
       bot.pathBuffer.add(bot.x, bot.y);
     } else {
+      // Hit wall, turn around
       bot._aiState = 'EVADE';
       bot._stateTimer = 0;
       const angleToCenter = Math.atan2(-bot.y, -bot.x);
@@ -506,7 +501,7 @@ function updateBotAI(bot, delta) {
     bot._stateTimer = 10000;
   }
   
-  // Safety check
+  // Safety check for wall proximity
   const distFromCenter = Math.sqrt(bot.x * bot.x + bot.y * bot.y);
   if (distFromCenter > gameConstants.arena.radius - 150) {
     bot._aiState = 'EVADE';
@@ -516,7 +511,13 @@ function updateBotAI(bot, delta) {
   }
 }
 
-// FIXED: Proper wall collision detection
+// ============================================================================
+// COLLISION DETECTION
+// ============================================================================
+
+/**
+ * Check wall collisions for all marbles
+ */
 function checkWallCollisions() {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   const wallHits = [];
@@ -527,11 +528,13 @@ function checkWallCollisions() {
     const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
     let hitWall = false;
     
+    // Check head
     const headDist = Math.sqrt(marble.x * marble.x + marble.y * marble.y);
     if (headDist + marbleRadius > gameConstants.arena.radius) {
       hitWall = true;
     }
     
+    // Check body segments
     if (!hitWall && marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
       const segmentSpacing = 20;
       const bodyLength = marble.lengthScore * 2;
@@ -549,6 +552,7 @@ function checkWallCollisions() {
     }
     
     if (hitWall) {
+      // Credit to highest bounty player or golden marble
       let creditTo = null;
       const goldenMarble = allMarbles.find(m => m.isGolden && m.alive && m.id !== marble.id);
       
@@ -576,6 +580,9 @@ function checkWallCollisions() {
   return wallHits;
 }
 
+/**
+ * Check coin collection
+ */
 function checkCoinCollisions() {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   
@@ -588,10 +595,11 @@ function checkCoinCollisions() {
       const dist = Math.sqrt(dx * dx + dy * dy);
       
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+      const suctionRadius = marbleRadius + gameConstants.suction.extraRadius;
       
-      if (dist < marbleRadius + coin.radius) {
+      if (dist < suctionRadius) {
+        // Picked up
         marble.lengthScore += coin.growthValue;
-        
         gameState.coins.splice(i, 1);
         break;
       }
@@ -599,6 +607,13 @@ function checkCoinCollisions() {
   }
 }
 
+// ============================================================================
+// MARBLE DEATH & DROPS
+// ============================================================================
+
+/**
+ * Kill a marble and spawn coin drops
+ */
 function killMarble(marble, killerId) {
   if (!marble.alive) {
     console.log(`⚠️ Attempted to kill already dead marble: ${marble.id}`);
@@ -609,25 +624,28 @@ function killMarble(marble, killerId) {
   console.log(`💀 ${marble.name || marble.id} killed by ${killerId || 'wall/unknown'}`);
   
   const dropInfo = calculateBountyDrop(marble, gameConstants);
+  const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants);
   
-  const numCoins = Math.min(20, Math.floor(dropInfo.totalValue / gameConstants.peewee.growthValue));
-  const coinsToSpawn = Math.min(numCoins, MAX_COINS - gameState.coins.length);
+  // Spawn coins (peewees) - NO BOUNTY ON COINS!
+  const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
 
   for (let i = 0; i < coinsToSpawn; i++) {
-    const angle = (i / numCoins) * Math.PI * 2;
+    const angle = (i / coinsToSpawn) * Math.PI * 2;
     const distance = 50 + Math.random() * 100;
     
     const coin = {
       id: `coin_${Date.now()}_${Math.random()}`,
       x: marble.x + Math.cos(angle) * distance,
       y: marble.y + Math.sin(angle) * distance,
-      growthValue: Math.floor(dropInfo.totalValue / numCoins) || 5,
-      radius: gameConstants.peewee.radius
+      growthValue: Math.floor(dropDist.valuePerDrop) || 5,
+      radius: gameConstants.peewee.radius,
+      // NO BOUNTY PROPERTY - coins don't have bounty!
     };
     
     gameState.coins.push(coin);
   }
   
+  // Award bounty to killer
   if (killerId) {
     let killer = gameState.players[killerId];
     if (!killer) {
@@ -641,6 +659,7 @@ function killMarble(marble, killerId) {
       
       console.log(`  ➜ ${killer.name || killer.id} gained ${dropInfo.bountyValue} bounty (now ${killer.bounty})`);
       
+      // Notify player of kill
       if (!killer.isBot) {
         io.to(killer.id).emit('playerKill', {
           killerId: killer.id,
@@ -652,11 +671,13 @@ function killMarble(marble, killerId) {
     }
   }
   
+  // Handle bot respawn
   if (marble.isBot) {
     const idx = gameState.bots.findIndex(b => b.id === marble.id);
     if (idx >= 0) {
       gameState.bots.splice(idx, 1);
       
+      // Respawn after 3 seconds
       setTimeout(() => {
         if (gameState.bots.length < MAX_BOTS) {
           const newId = `bot_${Date.now()}`;
@@ -665,6 +686,7 @@ function killMarble(marble, killerId) {
       }, 3000);
     }
   } else {
+    // Player death
     delete gameState.players[marble.id];
     
     io.to(marble.id).emit('playerDeath', {
@@ -677,6 +699,7 @@ function killMarble(marble, killerId) {
     });
   }
   
+  // Broadcast death to all clients
   io.emit('marbleDeath', {
     marbleId: marble.id,
     killerId: killerId,
@@ -684,9 +707,17 @@ function killMarble(marble, killerId) {
   });
 }
 
+// ============================================================================
+// GOLDEN MARBLE SYSTEM
+// ============================================================================
+
+/**
+ * Update golden marble (highest bounty player)
+ */
 function updateGoldenMarble() {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   
+  // Clear all golden status
   allMarbles.forEach(m => m.isGolden = false);
   
   if (allMarbles.length > 0) {
@@ -700,59 +731,13 @@ function updateGoldenMarble() {
   }
 }
 
-const app = express();
-const server = http.createServer(app);
+// ============================================================================
+// SPAWNING FUNCTIONS
+// ============================================================================
 
-const corsOptions = {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  credentials: true,
-  methods: ['GET', 'POST']
-};
-
-app.use(express.json());
-
-const io = socketIO(server, {
-  pingTimeout: 60000,
-  pingInterval: 25000
-});
-
-const gameState = {
-  players: {},
-  coins: [],
-  bots: [],
-  lastUpdate: Date.now()
-};
-
-const MAX_BOTS = gameConstants.bot.count || 20;
-const MAX_COINS = 200;
-const BOT_NAMES = [
-  'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
-  'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant',
-  'SteelBall', 'VelocityVixen', 'OrbitOps', 'RoundRanger', 'SpinDoctor',
-  'BallBlitz', 'RollerRiot', 'MarbleMayhem', 'SphereStorm', 'BounceKnight'
-];
-
-const MARBLE_TYPES = Object.values(gameConstants.pickupThemes)
-  .filter(theme => theme.isShooter)
-  .map(theme => theme.key);
-
-app.get('/api/constants', (req, res) => {
-  res.json({
-    ...gameConstants,
-    version: gameConstants.version || '1.0.1-combined'
-  });
-});
-
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    players: Object.keys(gameState.players).length,
-    bots: gameState.bots.length,
-    coins: gameState.coins.length,
-    uptime: process.uptime()
-  });
-});
-
+/**
+ * Spawn a bot
+ */
 function spawnBot(id) {
   const spawnPos = findSafeSpawn(
     gameState,
@@ -767,18 +752,15 @@ function spawnBot(id) {
     x: spawnPos.x,
     y: spawnPos.y,
     angle: Math.random() * Math.PI * 2,
-    vx: 0,
-    vy: 0,
     lengthScore: gameConstants.bot.startLength,
     bounty: Math.floor(Math.random() * (gameConstants.bot.startBountyMax - gameConstants.bot.startBounty)) + gameConstants.bot.startBounty,
     kills: 0,
     alive: true,
-    boosting: false, // Bots can't boost
+    boosting: false,
     isBot: true,
     isGolden: false,
     targetX: spawnPos.x,
     targetY: spawnPos.y,
-    nextTargetTime: Date.now() + Math.random() * 3000 + 2000,
     lastUpdate: Date.now(),
     spawnTime: Date.now(),
     pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
@@ -791,6 +773,9 @@ function spawnBot(id) {
   console.log(`🤖 Bot spawned: ${bot.name} at (${Math.floor(bot.x)}, ${Math.floor(bot.y)})`);
 }
 
+/**
+ * Spawn a coin (peewee)
+ */
 function spawnCoin() {
   if (gameState.coins.length >= MAX_COINS) {
     return;
@@ -805,30 +790,50 @@ function spawnCoin() {
     y: Math.sin(angle) * distance,
     growthValue: gameConstants.peewee.growthValue,
     radius: gameConstants.peewee.radius
+    // NO BOUNTY - coins don't have bounty!
   };
 
   gameState.coins.push(coin);
 }
 
-// IMPROVED: Staggered bot spawning
+// ============================================================================
+// GAME INITIALIZATION
+// ============================================================================
+
+/**
+ * Initialize game world
+ */
 function initializeGame() {
   console.log('🎮 Initializing game world...');
   
-  // Spawn coins immediately
+  // Initialize spatial grid
+  const bounds = {
+    minX: -gameConstants.arena.radius,
+    minY: -gameConstants.arena.radius,
+    maxX: gameConstants.arena.radius,
+    maxY: gameConstants.arena.radius
+  };
+  gameState.spatialGrid = new SpatialGrid(SPATIAL_GRID_SIZE, bounds);
+  
+  // Spawn coins
   for (let i = 0; i < MAX_COINS; i++) {
     spawnCoin();
   }
   console.log(`✅ Spawned ${MAX_COINS} coins`);
   
-  // IMPROVED: Stagger bot spawns over 10 seconds
-  const spawnInterval = 10000 / MAX_BOTS; // 10 seconds total
+  // Stagger bot spawns over 10 seconds
+  const spawnInterval = 10000 / MAX_BOTS;
   for (let i = 0; i < MAX_BOTS; i++) {
     setTimeout(() => {
-      spawnBot(`bot_${i}`);
+      spawnBot(`bot_${Date.now()}_${i}`);
     }, i * spawnInterval);
   }
   console.log(`⏰ Spawning ${MAX_BOTS} bots over 10 seconds`);
 }
+
+// ============================================================================
+// SOCKET.IO EVENT HANDLERS
+// ============================================================================
 
 io.on('connection', (socket) => {
   console.log(`🔌 Player connected: ${socket.id}`);
@@ -891,6 +896,7 @@ io.on('connection', (socket) => {
     const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
     const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
     
+    // Validate position is within arena
     if (distFromCenter + marbleRadius > gameConstants.arena.radius) {
       return;
     }
@@ -917,8 +923,9 @@ io.on('connection', (socket) => {
   });
 });
 
-// Game loop - 60 FPS server tick
-const TICK_RATE = 1000 / 60;
+// ============================================================================
+// GAME LOOP - 60 FPS SERVER TICK
+// ============================================================================
 let tickCounter = 0;
 
 setInterval(() => {
@@ -927,18 +934,31 @@ setInterval(() => {
   gameState.lastUpdate = now;
   tickCounter++;
 
+  // Update bots
   for (const bot of gameState.bots) {
     if (bot.alive) {
       updateBotAI(bot, delta);
     }
   }
 
+  // Check coin pickups
   checkCoinCollisions();
 
-  const killedThisFrame = new Set();
+  // Rebuild spatial grid for this frame
+  if (gameState.spatialGrid) {
+    gameState.spatialGrid.clear();
+    
+    const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+    for (const marble of allMarbles) {
+      gameState.spatialGrid.insertMarble(marble);
+    }
+  }
 
+  // Check marble collisions
+  const killedThisFrame = new Set();
   const collisionResults = checkCollisions(gameState, gameConstants);
   
+  // Deduplicate victims
   const victimToKiller = new Map();
   
   for (const collision of collisionResults) {
@@ -951,6 +971,7 @@ setInterval(() => {
     }
   }
   
+  // Kill victims
   for (const [victimId, killerId] of victimToKiller.entries()) {
     const victim = gameState.players[victimId] || gameState.bots.find(b => b.id === victimId);
     
@@ -960,6 +981,7 @@ setInterval(() => {
     }
   }
 
+  // Check wall collisions
   const wallHits = checkWallCollisions();
   
   for (const wallHit of wallHits) {
@@ -975,18 +997,20 @@ setInterval(() => {
     }
   }
 
+  // Every second: update golden marble, spawn coins
   if (tickCounter % 60 === 0) {
     updateGoldenMarble();
     
     const coinsToSpawn = MAX_COINS - gameState.coins.length;
-    for(let i = 0; i < coinsToSpawn / 10; i++) {
+    for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) {
       spawnCoin();
     }
   }
 
+  // Remove stale players
   Object.keys(gameState.players).forEach(playerId => {
     if (now - gameState.players[playerId].lastUpdate > 10000) {
-      console.log(`📌 Stale player removed: ${playerId}`);
+      console.log(`🔌 Stale player removed: ${playerId}`);
       delete gameState.players[playerId];
       io.emit('playerLeft', { playerId });
     }
@@ -994,7 +1018,9 @@ setInterval(() => {
 
 }, TICK_RATE);
 
-const BROADCAST_RATE = 1000 / 20;
+// ============================================================================
+// BROADCAST LOOP - 20 FPS CLIENT UPDATES
+// ============================================================================
 setInterval(() => {
   io.emit('gameState', {
     players: gameState.players,
@@ -1004,17 +1030,21 @@ setInterval(() => {
   });
 }, BROADCAST_RATE);
 
+// ============================================================================
+// SERVER STARTUP
+// ============================================================================
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`-- MIBS.GG SERVER ONLINE --`);
-  console.log(`| Listening on port: ${PORT}`);
-  console.log(`| Allowed Origin: ${corsOptions.origin}`);
-  console.log(`| Constants Version: ${gameConstants.version}`);
-  console.log(`| Server Tick Rate: ${1000 / TICK_RATE} FPS`);
-  console.log(`| Broadcast Rate: ${1000 / BROADCAST_RATE} FPS`);
-  console.log(`| Max Bots: ${MAX_BOTS}`);
-  console.log(`| Max Coins: ${MAX_COINS}`);
-  console.log(`---------------------------`);
+  console.log(`╔════════════════════════════════════╗`);
+  console.log(`║   MIBS.GG SERVER ONLINE           ║`);
+  console.log(`╠════════════════════════════════════╣`);
+  console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
+  console.log(`║ Constants: ${gameConstants.version.padEnd(23)}║`);
+  console.log(`║ Tick Rate: ${(1000 / TICK_RATE).toFixed(0)}fps ${' '.repeat(21)}║`);
+  console.log(`║ Broadcast: ${(1000 / BROADCAST_RATE).toFixed(0)}fps ${' '.repeat(21)}║`);
+  console.log(`║ Max Bots: ${MAX_BOTS.toString().padEnd(24)}║`);
+  console.log(`║ Max Coins: ${MAX_COINS.toString().padEnd(23)}║`);
+  console.log(`╚════════════════════════════════════╝`);
   
   initializeGame();
 });
