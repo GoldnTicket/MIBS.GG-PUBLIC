@@ -173,7 +173,7 @@ const gameState = {
 // ============================================================================
 // CONSTANTS & CONFIGURATION
 // ============================================================================
-const MAX_BOTS = gameConstants.bot.count || 20;
+const MAX_BOTS = gameConstants.bot.count ?? 20;
 const MAX_COINS = 200;
 const TICK_RATE = 1000 / 60; // 60 FPS server tick
 const BROADCAST_RATE = 1000 / 20; // 20 FPS broadcast to clients
@@ -202,14 +202,13 @@ const corsOptions = {
   methods: ['GET', 'POST']
 };
 
-app.use(cors(corsOptions));
+//app.use(cors(corsOptions)); removing this is done by nginx
 app.use(express.json());
 
 // CRITICAL: Proper Socket.io configuration for stability
 const io = socketIO(server, {
   pingTimeout: 60000,
   pingInterval: 25000,
-  cors: corsOptions,
   transports: ['websocket', 'polling']
 });
 
