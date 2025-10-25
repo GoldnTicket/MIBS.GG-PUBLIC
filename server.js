@@ -1020,6 +1020,13 @@ setInterval(() => {
 // ============================================================================
 // BROADCAST LOOP - 20 FPS CLIENT UPDATES
 // ============================================================================
+// Debug what we're about to broadcast
+const playerIds = Object.keys(gameState.players);
+if (playerIds.length > 0) {
+  console.log(`📡 Broadcasting ${playerIds.length} players:`, playerIds);
+}
+
+
 setInterval(() => {
   io.emit('gameState', {
     players: gameState.players,
