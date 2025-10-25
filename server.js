@@ -894,31 +894,33 @@ io.emit('playerJoined', {
     console.log(`✅ Player ${data.name} joined at (${Math.floor(spawnPos.x)}, ${Math.floor(spawnPos.y)})`);
   });
 
-  socket.on('playerMove', (data) => {
-    const player = gameState.players[socket.id];
-    if (!player || !player.alive) return;
-    
-    if (isNaN(data.x) || isNaN(data.y) || isNaN(data.angle)) {
-      console.warn(`🚫 REJECTED NaN move from ${socket.id}`);
-      return;
-    }
-
-    const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
-    const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
-    
-   // Check if position would be outside arena - KILL instead of reject!
-  if (distFromCenter + marbleRadius > gameConstants.arena.radius) {
-    console.log(`🧱 ${player.name} hit arena wall via playerMove!`);
-    killMarble(player, null);
+socket.on('playerMove', (data) => {
+  const player = gameState.players[socket.id];
+  if (!player || !player.alive) return;
+  
+  if (isNaN(data.x) || isNaN(data.y) || isNaN(data.angle)) {
+    console.warn(`🚫 REJECTED NaN move from ${socket.id}`);
     return;
   }
-    
-    player.x = data.x;
-    player.y = data.y;
-    player.angle = data.angle;
-    player.pathBuffer.add(player.x, player.y);
-    player.lastUpdate = Date.now();
-  });
+
+  const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
+  const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
+  
+  // If position would be outside arena - CLAMP IT, don't reject!
+  if (distFromCenter + marbleRadius > gameConstants.arena.radius) {
+    const angleToCenter = Math.atan2(-data.y, -data.x);
+    const maxDist = gameConstants.arena.radius - marbleRadius - 10;
+    data.x = Math.cos(angleToCenter + Math.PI) * maxDist;
+    data.y = Math.sin(angleToCenter + Math.PI) * maxDist;
+    console.log(`⚠️ Clamped ${player.name} position to boundary`);
+  }
+  
+  player.x = data.x;
+  player.y = data.y;
+  player.angle = data.angle;
+  player.pathBuffer.add(player.x, player.y);
+  player.lastUpdate = Date.now();
+});
 
   socket.on('playerBoost', (isBoosting) => {
     if (!gameState.players[socket.id]) return;
