@@ -906,13 +906,9 @@ socket.on('playerMove', (data) => {
   const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
   const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
   
-  // If position would be outside arena - CLAMP IT, don't reject!
+  // Just REJECT invalid positions, don't clamp
   if (distFromCenter + marbleRadius > gameConstants.arena.radius) {
-    const angleToCenter = Math.atan2(-data.y, -data.x);
-    const maxDist = gameConstants.arena.radius - marbleRadius - 10;
-    data.x = Math.cos(angleToCenter + Math.PI) * maxDist;
-    data.y = Math.sin(angleToCenter + Math.PI) * maxDist;
-    console.log(`⚠️ Clamped ${player.name} position to boundary`);
+    return; // Reject silently
   }
   
   player.x = data.x;
