@@ -879,6 +879,17 @@ io.on('connection', (socket) => {
     io.emit('playerJoined', {
       player: player
     });
+io.emit('playerJoined', {
+    player: player
+  });
+  
+  // Send spawn position back to the client
+  socket.emit('spawnPosition', {
+    x: player.x,
+    y: player.y,
+    angle: player.angle
+  });
+
 
     console.log(`✅ Player ${data.name} joined at (${Math.floor(spawnPos.x)}, ${Math.floor(spawnPos.y)})`);
   });
