@@ -895,10 +895,12 @@ io.on('connection', (socket) => {
     const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
     const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
     
-    // Validate position is within arena
-    if (distFromCenter + marbleRadius > gameConstants.arena.radius) {
-      return;
-    }
+   // Check if position would be outside arena - KILL instead of reject!
+  if (distFromCenter + marbleRadius > gameConstants.arena.radius) {
+    console.log(`🧱 ${player.name} hit arena wall via playerMove!`);
+    killMarble(player, null);
+    return;
+  }
     
     player.x = data.x;
     player.y = data.y;
