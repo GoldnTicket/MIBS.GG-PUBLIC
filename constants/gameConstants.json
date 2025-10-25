@@ -19,12 +19,12 @@
     "turnInputResponsePer60": 1.8
   },
   "player": {
-    "startLength": 50,
+    "startLength": 100,
     "startBounty": 1,
     "widthVsLengthMult": 0.8
   },
   "bot": {
-    "count": 0,
+    "count": 2,
     "startLength": 50,
     "startBounty": 2,
     "startBountyMax": 10,
@@ -35,16 +35,16 @@
     "reacquireMs": 2000
   },
   "marble": {
-    "shooterTargetWidth": 40,
-    "peeweeTargetWidth": 30,
+    "shooterTargetWidth": 50,
+    "peeweeTargetWidth": 50,
     "spinEnabled": true,
-    "spinSpeedMin": 1.5,
-    "spinSpeedMax": 1.8,
-    "boostSpinMultiplier": 7,
+    "spinSpeedMin": 1.3,
+    "spinSpeedMax": 2.0,
+    "boostSpinMultiplier": 12,
     "shadowEnabled": true,
-    "shadowOffsetX": 12,
-    "shadowOffsetY": 16,
-    "shadowAlpha": 0.7
+    "shadowOffsetX": 14,
+    "shadowOffsetY": 14,
+    "shadowAlpha": 0.8
   },
   "spline": {
     "tension": 0.5,
@@ -58,7 +58,7 @@
     "lock": true,
     "leadMarbleMultiplier": 1.20,
     "basePullPxPerSec": 360,
-    "maxSpeedPxPerSec": 420,
+    "maxSpeedPxPerSec": 220,
     "velAccelPer60": 0.50,
     "minBufferFrac": 0.20,
     "pickupGraceSec": 0.20
@@ -73,8 +73,8 @@
     "relApproachThreshold": 4,
     "dropValueMultiplier": 1.0,
     "growthDroppedPercent": 0.3,
-    "crashDissolveDurationMs": 300,
-    "crashFlareLifeMs": 400
+    "crashDissolveDurationMs": 500,
+    "crashFlareLifeMs": 600
   },
   "peewee": {
     "growthValue": 10,
@@ -135,7 +135,7 @@
     "growthDropMultiplier": 0.6
   },
   "zoom": {
-    "max": 1.2,
+    "max": 1.0,
     "min": 0.505,
     "scoreAtMin": 2000,
     "lerpPer60": 0.25,
