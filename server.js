@@ -926,6 +926,16 @@ socket.on('playerMove', (data) => {
     gameState.players[socket.id].boosting = !!isBoosting;
   });
 
+socket.on('playerInput', (data) => {
+  const player = gameState.players[socket.id];
+  if (!player || !player.alive) return;
+  
+  // Store input for server simulation
+  player.targetAngle = data.targetAngle;
+  player.boosting = data.boosting || false;
+});
+
+
   socket.on('disconnect', () => {
     console.log(`🔌 Player disconnected: ${socket.id}`);
     delete gameState.players[socket.id];
@@ -982,15 +992,16 @@ if (distFromCenter <= maxAllowedDist) {
   player.x = newX;
   player.y = newY;
   player.pathBuffer.add(player.x, player.y);
-   } else {
+  } else {
   // ✅ KILL PLAYER - Hit boundary!
-  console.log(`🚫 ${player.name} hit boundary at dist ${distFromCenter.toFixed(0)}`); }
-
-  // Mark for death (will be processed after loop)
+  console.log(`🚫 ${player.name} hit boundary at dist ${distFromCenter.toFixed(0)}`);
+  
+  // Mark for death (MUST BE INSIDE ELSE!)
   if (!player._markForDeath) {
     player._markForDeath = true;
   }
-  });
+}
+});
 
   // ✅ Process boundary deaths (ADD THIS ENTIRE BLOCK HERE)
   Object.values(gameState.players).forEach(player => {
