@@ -977,20 +977,55 @@ setInterval(() => {
     const distFromCenter = Math.sqrt(newX * newX + newY * newY);
     const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
     
-    if (distFromCenter <= maxAllowedDist) {
-      player.x = newX;
-      player.y = newY;
-      player.pathBuffer.add(player.x, player.y);
-    }
-    // If outside boundary, player doesn't move (wall collision will handle death)
+if (distFromCenter <= maxAllowedDist) {
+  player.x = newX;
+  player.y = newY;
+  player.pathBuffer.add(player.x, player.y);
+   } else {
+  // ✅ KILL PLAYER - Hit boundary!
+  console.log(`🚫 ${player.name} hit boundary at dist ${distFromCenter.toFixed(0)}`); }
+
+  // Mark for death (will be processed after loop)
+  if (!player._markForDeath) {
+    player._markForDeath = true;
+  }
   });
+
+  // ✅ Process boundary deaths (ADD THIS ENTIRE BLOCK HERE)
+  Object.values(gameState.players).forEach(player => {
+    if (player._markForDeath && player.alive) {
+      // Credit to golden marble or highest bounty
+      let creditTo = null;
+      const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+      const goldenMarble = allMarbles.find(m => m.isGolden && m.alive && m.id !== player.id);
+      
+      if (goldenMarble) {
+        creditTo = goldenMarble.id;
+      } else {
+        const sorted = allMarbles
+          .filter(m => m.alive && m.id !== player.id)
+          .sort((a, b) => (b.bounty || 0) - (a.bounty || 0));
+        
+        if (sorted.length > 0) {
+          creditTo = sorted[0].id;
+        }
+      }
+      
+      killMarble(player, creditTo);
+    }
+  });
+
 
   // Update bots
   for (const bot of gameState.bots) {
     if (bot.alive) {
       updateBotAI(bot, delta);
     }
+  
+  
   }
+
+
 
   // Check coin pickups
   checkCoinCollisions();
