@@ -898,19 +898,27 @@ socket.on('playerMove', (data) => {
   const player = gameState.players[socket.id];
   if (!player || !player.alive) return;
   
+  // Validate data integrity
   if (isNaN(data.x) || isNaN(data.y) || isNaN(data.angle)) {
-    console.warn(`🚫 REJECTED NaN move from ${socket.id}`);
     return;
   }
 
+  // ANTI-CHEAT: Validate boundary (matching client logic)
   const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
   const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
-  
-  // Just REJECT invalid positions, don't clamp
-  if (distFromCenter + marbleRadius > gameConstants.arena.radius) {
-    return; // Reject silently
+  const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
+
+  console.log(`📍 ${player.name} move: client=(${data.x.toFixed(0)}, ${data.y.toFixed(0)}), dist=${distFromCenter.toFixed(0)}, max=${maxAllowedDist.toFixed(0)}`);
+
+
+  if (distFromCenter > maxAllowedDist) {
+    // ANTI-CHEAT TRIGGERED: Kill player attempting to go out of bounds
+    console.log(`🚫 ANTI-CHEAT: ${player.name} tried to move outside boundary`);
+    killMarble(player, null);
+    return;
   }
   
+  // Position valid - accept it
   player.x = data.x;
   player.y = data.y;
   player.angle = data.angle;
