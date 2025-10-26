@@ -952,7 +952,8 @@ setInterval(() => {
   // ═══════════════════════════════════════════════════════
   Object.values(gameState.players).forEach(player => {
     if (!player.alive) return;
-    
+      // ✅ FIX: Don't move players until they've sent first input
+  if (player.targetAngle === undefined) return;
     const dt = delta / 1000; // Convert to seconds
     
     // Calculate speed
