@@ -933,6 +933,7 @@ socket.on('playerInput', (data) => {
   // Store input for server simulation
   player.targetAngle = data.targetAngle;
   player.boosting = data.boosting || false;
+    player.lastUpdate = Date.now();  // ← ADD THIS LINE!
 });
 
 
