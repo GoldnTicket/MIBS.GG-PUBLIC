@@ -947,6 +947,44 @@ setInterval(() => {
   gameState.lastUpdate = now;
   tickCounter++;
 
+  // ═══════════════════════════════════════════════════════
+  // SIMULATE PLAYER MOVEMENT (Server authoritative)
+  // ═══════════════════════════════════════════════════════
+  Object.values(gameState.players).forEach(player => {
+    if (!player.alive) return;
+    
+    const dt = delta / 1000; // Convert to seconds
+    
+    // Calculate speed
+    const baseSpeed = gameConstants.movement.normalSpeed;
+    const speed = player.boosting ? baseSpeed * gameConstants.movement.boostMultiplier : baseSpeed;
+    
+    // Smooth angle transition
+    if (player.targetAngle !== undefined) {
+      const targetAngle = player.targetAngle;
+      let angleDiff = wrapAngle(targetAngle - player.angle);
+      const maxTurn = Math.PI * dt * 3; // Smooth turning
+      angleDiff = Math.max(-maxTurn, Math.min(maxTurn, angleDiff));
+      player.angle = wrapAngle(player.angle + angleDiff);
+    }
+    
+    // Move forward
+    const newX = player.x + Math.cos(player.angle) * speed * dt;
+    const newY = player.y + Math.sin(player.angle) * speed * dt;
+    
+    // Boundary check
+    const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
+    const distFromCenter = Math.sqrt(newX * newX + newY * newY);
+    const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
+    
+    if (distFromCenter <= maxAllowedDist) {
+      player.x = newX;
+      player.y = newY;
+      player.pathBuffer.add(player.x, player.y);
+    }
+    // If outside boundary, player doesn't move (wall collision will handle death)
+  });
+
   // Update bots
   for (const bot of gameState.bots) {
     if (bot.alive) {
