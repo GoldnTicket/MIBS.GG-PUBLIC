@@ -176,7 +176,7 @@ const gameState = {
 const MAX_BOTS = gameConstants.bot.count ?? 20;
 const MAX_COINS = 200;
 const TICK_RATE = 1000 / 60; // 60 FPS server tick
-const BROADCAST_RATE = 1000 / 20; // 20 FPS broadcast to clients
+const BROADCAST_RATE = 1000 / 60; // 20 FPS broadcast to clients
 const SPATIAL_GRID_SIZE = gameConstants.collision.gridSizePx || 64;
 
 const BOT_NAMES = [
