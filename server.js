@@ -879,10 +879,7 @@ io.on('connection', (socket) => {
     io.emit('playerJoined', {
       player: player
     });
-io.emit('playerJoined', {
-    player: player
-  });
-  
+
   // Send spawn position back to the client
   socket.emit('spawnPosition', {
     x: player.x,
@@ -907,8 +904,6 @@ socket.on('playerMove', (data) => {
   const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
   const distFromCenter = Math.sqrt(data.x * data.x + data.y * data.y);
   const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
-
-  console.log(`📍 ${player.name} move: client=(${data.x.toFixed(0)}, ${data.y.toFixed(0)}), dist=${distFromCenter.toFixed(0)}, max=${maxAllowedDist.toFixed(0)}`);
 
 
   if (distFromCenter > maxAllowedDist) {
@@ -1042,11 +1037,7 @@ setInterval(() => {
 
 
 
-setInterval(() => { // Debug what we're about to broadcast
-const playerIds = Object.keys(gameState.players);
-if (playerIds.length > 0) {
-  console.log(`📡 Broadcasting ${playerIds.length} players:`, playerIds);
-}
+setInterval(() => {
   io.emit('gameState', {
     players: gameState.players,
     bots: gameState.bots,
