@@ -1,7 +1,8 @@
-// MIBS.GG-PUBLIC/server.js - PRODUCTION FIXED
-// ✅ Emit death events BEFORE deletion
-// ✅ Stale player cleanup sends death events
-// ✅ Improved wall collision detection
+// MIBS.GG-PUBLIC/server.js - PRODUCTION WITH RECONCILIATION
+// ✅ Sequence-based input validation (anti-cheat)
+// ✅ Echo lastProcessedSeq for client reconciliation
+// ✅ Death events BEFORE deletion
+// ✅ Wall collision detection (all segments)
 
 require('dotenv').config();
 const express = require('express');
@@ -429,7 +430,6 @@ function updateBotAI(bot, delta) {
 // COLLISION DETECTION
 // ============================================================================
 
-// ✅ FIX: Improved wall collision detection
 function checkWallCollisions() {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   const wallHits = [];
@@ -448,17 +448,14 @@ function checkWallCollisions() {
       hitLocation = { x: marble.x, y: marble.y };
     }
     
-    // ✅ FIX: Check ALL body segments with appropriate radius
+    // Check ALL body segments
     if (!hitWall && marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
       const segmentSpacing = 20;
       const bodyLength = marble.lengthScore * 2;
       const numSegments = Math.floor(bodyLength / segmentSpacing);
       
-      // Check ALL segments, not just 50
       for (let i = 1; i <= numSegments; i++) {
         const sample = marble.pathBuffer.sampleBack(i * segmentSpacing);
-        
-        // ✅ Segments use smaller radius (90% of lead radius)
         const segmentRadius = leadRadius * 0.9;
         const segmentDist = Math.sqrt(sample.x * sample.x + sample.y * sample.y);
         
@@ -541,7 +538,6 @@ function killMarble(marble, killerId) {
     });
   }
   
-  // Get killer info
   let killer = null;
   let killerName = 'The Arena';
   let deathType = 'wall';
@@ -582,7 +578,7 @@ function killMarble(marble, killerId) {
       }, 3000);
     }
   } else {
-    // ✅ FIX: EMIT BEFORE DELETE
+    // EMIT BEFORE DELETE
     io.to(marble.id).emit('playerDeath', {
       playerId: marble.id,
       killerId: killerId,
@@ -595,7 +591,7 @@ function killMarble(marble, killerId) {
       timestamp: Date.now()
     });
     
-    // ✅ FIX: Delete AFTER event sent
+    // Delete AFTER event sent
     setImmediate(() => {
       delete gameState.players[marble.id];
     });
@@ -649,7 +645,8 @@ function spawnBot(id) {
     spawnTime: Date.now(),
     pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
     _aiState: 'HUNT_COIN',
-    _stateTimer: 0
+    _stateTimer: 0,
+    lastProcessedSeq: 0
   };
 
   bot.pathBuffer.reset(bot.x, bot.y);
@@ -730,7 +727,9 @@ io.on('connection', (socket) => {
       pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
       _lastValidX: spawnPos.x,
       _lastValidY: spawnPos.y,
-      _lastAngle: 0
+      _lastAngle: 0,
+      lastProcessedSeq: 0,
+      inputBuffer: []
     };
     
     player.pathBuffer.reset(player.x, player.y);
@@ -744,25 +743,48 @@ io.on('connection', (socket) => {
     });
   });
 
+  // ✅ FIX: Sequence validation (anti-cheat)
   socket.on('playerInput', (data) => {
     if (!checkRateLimit(socket.id, 'input')) return;
     
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
     
+    // Validate input structure
     if (typeof data.targetAngle !== 'number' || 
+        typeof data.seq !== 'number' ||
         isNaN(data.targetAngle) || 
         !isFinite(data.targetAngle)) {
       return;
     }
     
-    let normalizedAngle = data.targetAngle % (Math.PI * 2);
-    if (normalizedAngle > Math.PI) normalizedAngle -= Math.PI * 2;
-    if (normalizedAngle < -Math.PI) normalizedAngle += Math.PI * 2;
+    // Anti-cheat: Reject old or duplicate sequences
+    if (data.seq <= player.lastProcessedSeq) {
+      console.warn(`⚠️ Player ${socket.id} sent old input seq ${data.seq} (last: ${player.lastProcessedSeq})`);
+      return;
+    }
     
-    player.targetAngle = normalizedAngle;
+    // Anti-cheat: Reject sequence jumps > 5 (possible speedhack)
+    if (data.seq > player.lastProcessedSeq + 5) {
+      console.warn(`⚠️ Player ${socket.id} sequence jump ${player.lastProcessedSeq} -> ${data.seq}`);
+      return;
+    }
+    
+    // Accept input
+    player.lastProcessedSeq = data.seq;
+    player.targetAngle = wrapAngle(data.targetAngle);
     player.boosting = !!data.boosting;
     player.lastUpdate = Date.now();
+    
+    // Store for echo (keep last 10)
+    player.inputBuffer.push({
+      seq: data.seq,
+      processedAt: Date.now()
+    });
+    
+    if (player.inputBuffer.length > 10) {
+      player.inputBuffer.shift();
+    }
   });
 
   socket.on('disconnect', () => {
@@ -782,6 +804,7 @@ setInterval(() => {
   gameState.lastUpdate = now;
   tickCounter++;
 
+  // Player physics
   Object.values(gameState.players).forEach(player => {
     if (!player.alive || player.targetAngle === undefined) return;
     
@@ -834,6 +857,7 @@ setInterval(() => {
     player._lastAngle = player.angle;
   });
 
+  // Player death processing
   Object.values(gameState.players).forEach(player => {
     if (player._markForDeath && player.alive) {
       let creditTo = null;
@@ -854,12 +878,15 @@ setInterval(() => {
     }
   });
 
+  // Bot AI
   for (const bot of gameState.bots) {
     if (bot.alive) updateBotAI(bot, delta);
   }
 
+  // Coin collection
   checkCoinCollisions();
 
+  // Spatial grid
   if (gameState.spatialGrid) {
     gameState.spatialGrid.clear();
     const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
@@ -868,6 +895,7 @@ setInterval(() => {
     }
   }
 
+  // Collisions
   const killedThisFrame = new Set();
   const collisionResults = checkCollisions(gameState, gameConstants);
   const victimToKiller = new Map();
@@ -886,6 +914,7 @@ setInterval(() => {
     }
   }
 
+  // Wall collisions
   const wallHits = checkWallCollisions();
   for (const wallHit of wallHits) {
     if (killedThisFrame.has(wallHit.marbleId)) continue;
@@ -897,18 +926,17 @@ setInterval(() => {
     }
   }
 
+  // Golden marble update
   if (tickCounter % 60 === 0) {
     updateGoldenMarble();
     const coinsToSpawn = MAX_COINS - gameState.coins.length;
     for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) spawnCoin();
   }
 
-  // ✅ FIX: Stale player cleanup sends death event
+  // Stale player cleanup (with death event)
   Object.keys(gameState.players).forEach(playerId => {
     const player = gameState.players[playerId];
     if (now - player.lastUpdate > 10000) {
-      
-      // Send death event instead of playerLeft
       io.to(playerId).emit('playerDeath', {
         playerId: playerId,
         killerId: null,
@@ -921,10 +949,8 @@ setInterval(() => {
         timestamp: Date.now()
       });
       
-      // Also broadcast to others that player left
       io.emit('playerLeft', { playerId });
       
-      // Clean up after event sent
       setImmediate(() => {
         delete gameState.players[playerId];
       });
@@ -933,13 +959,36 @@ setInterval(() => {
 
 }, TICK_RATE);
 
+// ✅ FIX: Broadcast with lastProcessedSeq for reconciliation
 setInterval(() => {
-  io.emit('gameState', {
-    players: gameState.players,
+  const statePacket = {
+    players: {},
     bots: gameState.bots,
     coins: gameState.coins,
     timestamp: Date.now()
+  };
+  
+  // Include lastProcessedSeq for each player
+  Object.keys(gameState.players).forEach(playerId => {
+    const player = gameState.players[playerId];
+    statePacket.players[playerId] = {
+      id: player.id,
+      name: player.name,
+      marbleType: player.marbleType,
+      x: player.x,
+      y: player.y,
+      angle: player.angle,
+      lengthScore: player.lengthScore,
+      bounty: player.bounty,
+      kills: player.kills,
+      alive: player.alive,
+      boosting: player.boosting,
+      isGolden: player.isGolden,
+      lastProcessedSeq: player.lastProcessedSeq || 0
+    };
   });
+  
+  io.emit('gameState', statePacket);
 }, BROADCAST_RATE);
 
 // ============================================================================
@@ -947,12 +996,12 @@ setInterval(() => {
 // ============================================================================
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`╔═══════════════════════════════════╗`);
+  console.log(`╔════════════════════════════════════╗`);
   console.log(`║   MIBS.GG SERVER ONLINE           ║`);
-  console.log(`╠═══════════════════════════════════╣`);
+  console.log(`╠════════════════════════════════════╣`);
   console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
   console.log(`║ Version: ${gameConstants.version.padEnd(23)}║`);
-  console.log(`╚═══════════════════════════════════╝`);
+  console.log(`╚════════════════════════════════════╝`);
   
   initializeGame();
 });
