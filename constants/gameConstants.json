@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0-production",
+  "version": "2.0.1-production-fixed",
   "arena": {
     "diameter": 6000,
     "radius": 3000,
@@ -91,8 +91,9 @@
     "collisionEnabled": true,
     "bounceFactor": 0.8,
     "shadowEnabled": true,
-    "shadowOffsetY": 10,
-    "shadowAlpha": 0.3,
+    "shadowOffsetY": 8,
+    "shadowAlpha": 0.5,
+    "shadowWidthMultiplier": 0.8,
     "squashFactor": 0.99,
     "targetWidth": 30
   },
@@ -116,18 +117,17 @@
   },
   "dust": {
     "enabled": true,
-    "spawnChance": 0.5,
-    "velocityMin": -160,
-    "velocityMax": 160,
-    "velocityRandom": 0,
-    "gravity": 10,
-    "lifetimeMin": 0.4,
-    "lifetimeMax": 0.7,
-    "alphaStart": 0.6,
+    "spawnChance": 0.6,
+    "lifetimeMin": 0.3,
+    "lifetimeMax": 0.6,
+    "alphaStart": 0.7,
     "alphaEnd": 0,
-    "scaleStart": 0.8,
-    "scaleEnd": 1.5,
-    "positionOffset": 0.0
+    "scaleStart": 0.6,
+    "scaleEnd": 1.2,
+    "velocityMultiplier": 0.2,
+    "velocityVariation": 0.5,
+    "gravity": 50,
+    "positionOffset": 0.8
   },
   "golden": {
     "instantPayoutFraction": 0.20,
@@ -152,8 +152,11 @@
   "depths": {
     "background": -2000,
     "backgroundOuter": -1000,
-    "shadows": 4,
-    "marbles": 5,
+    "peeweeShadows": 3,
+    "marbleShadows": 4,
+    "peewees": 5,
+    "marbles": 6,
+    "boostDust": 8,
     "marbleContainer": 10,
     "faces": 12,
     "effects": 15,

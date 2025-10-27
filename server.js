@@ -1,7 +1,7 @@
-// MIBS.GG-PUBLIC/server.js - SINGLE FILE PRODUCTION SERVER
-// ✅ No external dependencies - everything in one file
-// ✅ Input-based movement with IDENTICAL turning logic
-// ✅ Anti-cheat validation
+// MIBS.GG-PUBLIC/server.js - PRODUCTION FIXED
+// ✅ Emit death events BEFORE deletion
+// ✅ Stale player cleanup sends death events
+// ✅ Improved wall collision detection
 
 require('dotenv').config();
 const express = require('express');
@@ -11,7 +11,7 @@ const socketIO = require('socket.io');
 const gameConstants = require('./constants/gameConstants.json');
 
 // ============================================================================
-// HELPER FUNCTIONS (inline)
+// HELPER FUNCTIONS
 // ============================================================================
 
 function wrapAngle(angle) {
@@ -429,6 +429,7 @@ function updateBotAI(bot, delta) {
 // COLLISION DETECTION
 // ============================================================================
 
+// ✅ FIX: Improved wall collision detection
 function checkWallCollisions() {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   const wallHits = [];
@@ -436,25 +437,34 @@ function checkWallCollisions() {
   for (const marble of allMarbles) {
     if (!marble.alive) continue;
     
-    const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+    const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
     let hitWall = false;
+    let hitLocation = null;
     
+    // Check head
     const headDist = Math.sqrt(marble.x * marble.x + marble.y * marble.y);
-    if (headDist + marbleRadius > gameConstants.arena.radius) {
+    if (headDist + leadRadius > gameConstants.arena.radius) {
       hitWall = true;
+      hitLocation = { x: marble.x, y: marble.y };
     }
     
+    // ✅ FIX: Check ALL body segments with appropriate radius
     if (!hitWall && marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
       const segmentSpacing = 20;
       const bodyLength = marble.lengthScore * 2;
       const numSegments = Math.floor(bodyLength / segmentSpacing);
       
-      for (let i = 1; i <= Math.min(numSegments, 50); i++) {
+      // Check ALL segments, not just 50
+      for (let i = 1; i <= numSegments; i++) {
         const sample = marble.pathBuffer.sampleBack(i * segmentSpacing);
+        
+        // ✅ Segments use smaller radius (90% of lead radius)
+        const segmentRadius = leadRadius * 0.9;
         const segmentDist = Math.sqrt(sample.x * sample.x + sample.y * sample.y);
         
-        if (segmentDist + marbleRadius * 0.95 > gameConstants.arena.radius) {
+        if (segmentDist + segmentRadius > gameConstants.arena.radius) {
           hitWall = true;
+          hitLocation = { x: sample.x, y: sample.y };
           break;
         }
       }
@@ -474,7 +484,11 @@ function checkWallCollisions() {
         if (sorted.length > 0) creditTo = sorted[0].id;
       }
       
-      wallHits.push({ marbleId: marble.id, creditTo });
+      wallHits.push({ 
+        marbleId: marble.id, 
+        creditTo,
+        location: hitLocation 
+      });
     }
   }
   
@@ -527,22 +541,32 @@ function killMarble(marble, killerId) {
     });
   }
   
+  // Get killer info
+  let killer = null;
+  let killerName = 'The Arena';
+  let deathType = 'wall';
+  
   if (killerId) {
-    let killer = gameState.players[killerId];
+    killer = gameState.players[killerId];
     if (!killer) killer = gameState.bots.find(b => b.id === killerId);
     
-    if (killer && killer.alive) {
-      killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
-      killer.kills = (killer.kills || 0) + 1;
-      killer.lengthScore += 20;
+    if (killer) {
+      killerName = killer.name || 'Unknown';
+      deathType = 'player';
       
-      if (!killer.isBot) {
-        io.to(killer.id).emit('playerKill', {
-          killerId: killer.id,
-          victimId: marble.id,
-          victimName: marble.name || 'Player',
-          bountyGained: dropInfo.bountyValue
-        });
+      if (killer.alive) {
+        killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
+        killer.kills = (killer.kills || 0) + 1;
+        killer.lengthScore += 20;
+        
+        if (!killer.isBot) {
+          io.to(killer.id).emit('playerKill', {
+            killerId: killer.id,
+            victimId: marble.id,
+            victimName: marble.name || 'Player',
+            bountyGained: dropInfo.bountyValue
+          });
+        }
       }
     }
   }
@@ -558,15 +582,22 @@ function killMarble(marble, killerId) {
       }, 3000);
     }
   } else {
-    delete gameState.players[marble.id];
-    
+    // ✅ FIX: EMIT BEFORE DELETE
     io.to(marble.id).emit('playerDeath', {
       playerId: marble.id,
       killerId: killerId,
+      killerName: killerName,
+      deathType: deathType,
       bountyLost: dropInfo.bountyValue,
       x: marble.x,
       y: marble.y,
-      marbleType: marble.marbleType
+      marbleType: marble.marbleType,
+      timestamp: Date.now()
+    });
+    
+    // ✅ FIX: Delete AFTER event sent
+    setImmediate(() => {
+      delete gameState.players[marble.id];
     });
   }
   
@@ -872,10 +903,31 @@ setInterval(() => {
     for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) spawnCoin();
   }
 
+  // ✅ FIX: Stale player cleanup sends death event
   Object.keys(gameState.players).forEach(playerId => {
-    if (now - gameState.players[playerId].lastUpdate > 10000) {
-      delete gameState.players[playerId];
+    const player = gameState.players[playerId];
+    if (now - player.lastUpdate > 10000) {
+      
+      // Send death event instead of playerLeft
+      io.to(playerId).emit('playerDeath', {
+        playerId: playerId,
+        killerId: null,
+        killerName: null,
+        deathType: 'timeout',
+        bountyLost: 0,
+        x: player.x,
+        y: player.y,
+        marbleType: player.marbleType,
+        timestamp: Date.now()
+      });
+      
+      // Also broadcast to others that player left
       io.emit('playerLeft', { playerId });
+      
+      // Clean up after event sent
+      setImmediate(() => {
+        delete gameState.players[playerId];
+      });
     }
   });
 
