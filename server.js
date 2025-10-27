@@ -743,54 +743,51 @@ io.on('connection', (socket) => {
     });
   });
 
-  // ✅ FIX: Sequence validation (anti-cheat)
   socket.on('playerInput', (data) => {
-    if (!checkRateLimit(socket.id, 'input')) return;
-    
-    const player = gameState.players[socket.id];
-    if (!player || !player.alive) return;
-    
-    // Validate input structure
-    if (typeof data.targetAngle !== 'number' || 
-        typeof data.seq !== 'number' ||
-        isNaN(data.targetAngle) || 
-        !isFinite(data.targetAngle)) {
-      return;
-    }
-    
-    // Anti-cheat: Reject old or duplicate sequences
-    if (data.seq <= player.lastProcessedSeq) {
-      console.warn(`⚠️ Player ${socket.id} sent old input seq ${data.seq} (last: ${player.lastProcessedSeq})`);
-      return;
-    }
-    
-    // Anti-cheat: Reject sequence jumps > 5 (possible speedhack)
-    if (data.seq > player.lastProcessedSeq + 5) {
-      console.warn(`⚠️ Player ${socket.id} sequence jump ${player.lastProcessedSeq} -> ${data.seq}`);
-      return;
-    }
-    
-    // Accept input
-    player.lastProcessedSeq = data.seq;
-    player.targetAngle = wrapAngle(data.targetAngle);
-    player.boosting = !!data.boosting;
-    player.lastUpdate = Date.now();
-    
-    // Store for echo (keep last 10)
-    player.inputBuffer.push({
-      seq: data.seq,
-      processedAt: Date.now()
-    });
-    
-    if (player.inputBuffer.length > 10) {
-      player.inputBuffer.shift();
-    }
+  if (!checkRateLimit(socket.id, 'input')) return;
+  
+  const player = gameState.players[socket.id];
+  if (!player || !player.alive) return;
+  
+  // Validate input structure
+  if (typeof data.targetAngle !== 'number' || 
+      typeof data.seq !== 'number' ||
+      isNaN(data.targetAngle) || 
+      !isFinite(data.targetAngle)) {
+    return;
+  }
+  
+  // Anti-cheat: Reject old or duplicate sequences
+  if (data.seq <= player.lastProcessedSeq) {
+    return; // Silently ignore duplicates
+  }
+  
+  // Anti-cheat: Detect large jumps (packet loss or speedhack)
+  const seqGap = data.seq - player.lastProcessedSeq;
+  if (seqGap > 20) {
+    // Large gap - likely reconnection or packet loss
+    console.warn(`⚠️ Player ${socket.id} sequence jump ${player.lastProcessedSeq} -> ${data.seq} (gap: ${seqGap}) - accepting`);
+  } else if (seqGap > 10) {
+    // Medium gap - log but accept
+    console.log(`ℹ️ Player ${socket.id} sequence gap: ${seqGap}`);
+  }
+  
+  // Accept input (even with gaps to allow recovery)
+  player.lastProcessedSeq = data.seq;
+  player.targetAngle = wrapAngle(data.targetAngle);
+  player.boosting = !!data.boosting;
+  player.lastUpdate = Date.now();
+  
+  // Store for echo (keep last 10)
+  if (!player.inputBuffer) player.inputBuffer = [];
+  player.inputBuffer.push({
+    seq: data.seq,
+    processedAt: Date.now()
   });
-
-  socket.on('disconnect', () => {
-    delete gameState.players[socket.id];
-    io.emit('playerLeft', { playerId: socket.id });
-  });
+  
+  if (player.inputBuffer.length > 10) {
+    player.inputBuffer.shift();
+  }
 });
 
 // ============================================================================
