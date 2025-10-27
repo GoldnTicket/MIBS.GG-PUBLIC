@@ -993,14 +993,12 @@ if (distFromCenter <= maxAllowedDist) {
   player.x = newX;
   player.y = newY;
   player.pathBuffer.add(player.x, player.y);
-  } else {
-  // ✅ KILL PLAYER - Hit boundary!
+} else {
+  // Hit boundary - kill immediately!
   console.log(`🚫 ${player.name} hit boundary at dist ${distFromCenter.toFixed(0)}`);
-  
-  // Mark for death (MUST BE INSIDE ELSE!)
-  if (!player._markForDeath) {
-    player._markForDeath = true;
-  }
+  player.alive = false;
+  player._markForDeath = true;  // Also mark so cleanup happens
+
 }
 });
 
