@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2-enhanced-hybrid",
+  "version": "2.0.0-production",
   "arena": {
     "diameter": 6000,
     "radius": 3000,
@@ -24,7 +24,7 @@
     "widthVsLengthMult": 0.8
   },
   "bot": {
-    "count": 20,
+    "count": 0,
     "startLength": 50,
     "startBounty": 2,
     "startBountyMax": 10,
@@ -91,8 +91,8 @@
     "collisionEnabled": true,
     "bounceFactor": 0.8,
     "shadowEnabled": true,
-    "shadowOffsetY": 6,
-    "shadowAlpha": 0.8,
+    "shadowOffsetY": 10,
+    "shadowAlpha": 0.3,
     "squashFactor": 0.99,
     "targetWidth": 30
   },
@@ -116,14 +116,14 @@
   },
   "dust": {
     "enabled": true,
-    "spawnChance": 0.6,
+    "spawnChance": 0.5,
     "velocityMin": -160,
     "velocityMax": 160,
     "velocityRandom": 0,
-    "gravity": 20,
-    "lifetimeMin": 500,
-    "lifetimeMax": 800,
-    "alphaStart": 0.7,
+    "gravity": 10,
+    "lifetimeMin": 0.4,
+    "lifetimeMax": 0.7,
+    "alphaStart": 0.6,
     "alphaEnd": 0,
     "scaleStart": 0.8,
     "scaleEnd": 1.5,
@@ -149,9 +149,16 @@
     "offsetScaleMultiplier": 1.2,
     "transitionDuration": 150
   },
-  "glow": {
-    "pulseEnabled": false,
-    "boostEnabled": false
+  "depths": {
+    "background": -2000,
+    "backgroundOuter": -1000,
+    "shadows": 4,
+    "marbles": 5,
+    "marbleContainer": 10,
+    "faces": 12,
+    "effects": 15,
+    "ui": 3000,
+    "overlay": 9000
   },
   "ui": {
     "cashoutX": 16,
@@ -164,15 +171,6 @@
   "nugget": {
     "valueMultiplier": 1.0,
     "targetGrowthPoints": 500
-  },
-  "depths": {
-    "background": -1000,
-    "shadows": 4,
-    "marbles": 10,
-    "faces": 12,
-    "effects": 15,
-    "ui": 3000,
-    "overlay": 9000
   },
   "pickupThemes": {
     "galaxy": {
@@ -195,13 +193,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": true,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 4488669, "alpha": 1.0},
-        {"color": 2250171, "alpha": 0.95},
-        {"color": 13192, "alpha": 0.75},
-        {"color": 4437, "alpha": 0.40}
-      ]
+      "isShooter": true
     },
     "canada": {
       "key": "CANADA",
@@ -209,13 +201,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": false,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 16711731, "alpha": 1.0},
-        {"color": 16711680, "alpha": 0.95},
-        {"color": 13369344, "alpha": 0.75},
-        {"color": 8912896, "alpha": 0.40}
-      ]
+      "isShooter": true
     },
     "usa": {
       "key": "USA1",
@@ -223,13 +209,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": false,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 16777215, "alpha": 1.0},
-        {"color": 16711731, "alpha": 0.95},
-        {"color": 21930, "alpha": 0.75},
-        {"color": 3342438, "alpha": 0.40}
-      ]
+      "isShooter": true
     },
     "aussie": {
       "key": "AUSSIE FLAG",
@@ -237,13 +217,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": false,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 8961023, "alpha": 1.0},
-        {"color": 4491519, "alpha": 0.95},
-        {"color": 21759, "alpha": 0.75},
-        {"color": 13209, "alpha": 0.40}
-      ]
+      "isShooter": true
     },
     "france": {
       "key": "FRANCE1",
@@ -251,13 +225,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": true,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 16777215, "alpha": 1.0},
-        {"color": 16711731, "alpha": 0.95},
-        {"color": 21930, "alpha": 0.75},
-        {"color": 3342438, "alpha": 0.40}
-      ]
+      "isShooter": true
     },
     "stardustgreen": {
       "key": "STARDUSTGREEN",
@@ -265,13 +233,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": true,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 65416, "alpha": 1.0},
-        {"color": 56678, "alpha": 0.95},
-        {"color": 43588, "alpha": 0.75},
-        {"color": 26146, "alpha": 0.40}
-      ]
+      "isShooter": true
     },
     "china": {
       "key": "CHINA",
@@ -279,13 +241,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": false,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 16711680, "alpha": 1.0},
-        {"color": 16768768, "alpha": 0.95},
-        {"color": 16744448, "alpha": 0.75},
-        {"color": 13384704, "alpha": 0.40}
-      ]
+      "isShooter": true
     },
     "poisonfrog": {
       "key": "POISON FROG",
@@ -293,13 +249,7 @@
       "displayWidth": 12,
       "weight": 20,
       "isGlass": false,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 16777130, "alpha": 1.0},
-        {"color": 16776960, "alpha": 0.95},
-        {"color": 13421568, "alpha": 0.75},
-        {"color": 8947712, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "pearlywhite": {
       "key": "PEARLYWHITE",
@@ -307,13 +257,7 @@
       "displayWidth": 12,
       "weight": 20,
       "isGlass": false,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 16777215, "alpha": 1.0},
-        {"color": 15658734, "alpha": 0.95},
-        {"color": 13421772, "alpha": 0.75},
-        {"color": 10066329, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "bananaswirl": {
       "key": "BANANASWIRL",
@@ -321,13 +265,7 @@
       "displayWidth": 12,
       "weight": 15,
       "isGlass": false,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 16777096, "alpha": 1.0},
-        {"color": 16772693, "alpha": 0.95},
-        {"color": 16768802, "alpha": 0.75},
-        {"color": 13413888, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "catseyeblueyellow": {
       "key": "CATSEYE BLUEYELLOW",
@@ -335,13 +273,7 @@
       "displayWidth": 12,
       "weight": 15,
       "isGlass": true,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 4491519, "alpha": 1.0},
-        {"color": 16772608, "alpha": 0.95},
-        {"color": 2254540, "alpha": 0.75},
-        {"color": 11175936, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "catseyegreenblue": {
       "key": "CATSEYE GREENBLUE",
@@ -349,13 +281,7 @@
       "displayWidth": 12,
       "weight": 15,
       "isGlass": true,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 65416, "alpha": 1.0},
-        {"color": 34815, "alpha": 0.95},
-        {"color": 43622, "alpha": 0.75},
-        {"color": 21930, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "catseyegreenorange": {
       "key": "CATSEYE GREENORANGE",
@@ -363,13 +289,7 @@
       "displayWidth": 12,
       "weight": 15,
       "isGlass": true,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 65280, "alpha": 1.0},
-        {"color": 16744448, "alpha": 0.95},
-        {"color": 43520, "alpha": 0.75},
-        {"color": 13388032, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "koifish": {
       "key": "KOIFISH",
@@ -377,13 +297,7 @@
       "displayWidth": 12,
       "weight": 15,
       "isGlass": false,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 16737860, "alpha": 1.0},
-        {"color": 16755336, "alpha": 0.95},
-        {"color": 16746598, "alpha": 0.75},
-        {"color": 13391155, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "unicorn": {
       "key": "UNICORN",
@@ -391,13 +305,7 @@
       "displayWidth": 12,
       "weight": 10,
       "isGlass": true,
-      "isPeewee": true,
-      "glowStops": [
-        {"color": 16744703, "alpha": 1.0},
-        {"color": 8978431, "alpha": 0.95},
-        {"color": 16746666, "alpha": 0.75},
-        {"color": 8947967, "alpha": 0.40}
-      ]
+      "isPeewee": true
     },
     "goldenmib": {
       "key": "GOLDEN MIB",
@@ -405,13 +313,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": true,
-      "isGolden": true,
-      "glowStops": [
-        {"color": 16766720, "alpha": 1.0},
-        {"color": 16755200, "alpha": 0.95},
-        {"color": 16744448, "alpha": 0.75},
-        {"color": 13402624, "alpha": 0.40}
-      ]
+      "isGolden": true
     },
     "fireball": {
       "key": "SUNSET",
@@ -419,13 +321,7 @@
       "displayWidth": 12,
       "weight": 0,
       "isGlass": true,
-      "isFireball": true,
-      "glowStops": [
-        {"color": 16725248, "alpha": 1.0},
-        {"color": 16737792, "alpha": 0.95},
-        {"color": 16744448, "alpha": 0.75},
-        {"color": 16755200, "alpha": 0.40}
-      ]
+      "isFireball": true
     }
   },
   "cashout": {
