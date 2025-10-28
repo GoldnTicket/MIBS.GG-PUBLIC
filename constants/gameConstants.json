@@ -1,5 +1,5 @@
 {
-  "version": "2.0.2-dust-visible-shadows-fixed",
+  "version": "2.0.3-refactor-physics-grid",
   "arena": {
     "diameter": 6000,
     "radius": 3000,
@@ -67,7 +67,7 @@
     "radiusMultiplier": 0.499,
     "penetrationBufferPx": 2,
     "updateThresholdPx": 2,
-    "gridSizePx": 64,
+    "gridSizePx": 200,
     "leadMarbleOverlapMargin": 3,
     "leadMarbleFrontConeDeg": 50,
     "relApproachThreshold": 4,
