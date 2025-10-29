@@ -766,15 +766,16 @@ io.on('connection', (socket) => {
 // ============================================================================
 let tickCounter = 0;
 
+// ✅ ADD: Monitoring variables
+let frameCount = 0;
+let lastStatsTime = Date.now();
+
 setInterval(() => {
   const now = Date.now();
   const delta = now - gameState.lastUpdate;
   gameState.lastUpdate = now;
   tickCounter++;
-// ✅ ADD: Monitoring variables
-let frameCount = 0;
-let lastStatsTime = Date.now();
-
+  
   
   // ✅ ADD: Performance monitoring (paste HERE)
   frameCount++;
