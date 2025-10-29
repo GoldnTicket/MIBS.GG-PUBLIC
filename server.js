@@ -661,6 +661,8 @@ function spawnCoin() {
   });
 }
 
+
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -744,15 +746,12 @@ io.on('connection', (socket) => {
         !isFinite(data.targetAngle)) {
       return;
     }
-    
-    let normalizedAngle = data.targetAngle % (Math.PI * 2);
-    if (normalizedAngle > Math.PI) normalizedAngle -= Math.PI * 2;
-    if (normalizedAngle < -Math.PI) normalizedAngle += Math.PI * 2;
-    
-    player.targetAngle = normalizedAngle;
-    player.boosting = !!data.boosting;
-    player.lastUpdate = Date.now();
-  });
+      
+  // ✅ USE RAW ANGLE (already normalized by client):
+  player.targetAngle = data.targetAngle;
+  player.boosting = !!data.boosting;
+  player.lastUpdate = Date.now();
+});
 
   socket.on('disconnect', () => {
     delete gameState.players[socket.id];
@@ -818,7 +817,14 @@ Object.values(gameState.players).forEach(player => {
     console.log('  minTurnMultiplier:', gameConstants.movement.minTurnMultiplier);
     global.constantsLogged = true;
   }
+  
+// ✅ DEBUG: Log server physics calculations
+if (!player._debugCounter) player._debugCounter = 0;
+player._debugCounter++;
 
+if (player._debugCounter % 120 === 0) {  // Every 1 second at 120 FPS
+  console.log(`🎮 Player ${socket.id.substring(0,4)}: angle=${(player.angle * 180 / Math.PI).toFixed(1)}°, target=${(player.targetAngle * 180 / Math.PI).toFixed(1)}°, boost=${player.boosting}`);
+}
   
   // ✅ DECLARE variables FIRST
   const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
