@@ -241,7 +241,7 @@ function checkRateLimit(socketId, action) {
 // ============================================================================
 const MAX_BOTS = gameConstants.bot.count || 0;
 const MAX_COINS = 200;
-const TICK_RATE = 1000 / 60;
+const TICK_RATE = 1000 / 120;
 const SPATIAL_GRID_SIZE = gameConstants.collision.gridSizePx || 64;
 const BOT_NAMES = [
   'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
