@@ -812,22 +812,8 @@ Object.values(gameState.players).forEach(player => {
   const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
   const baseSpeed = gameConstants.movement.normalSpeed;
   
-  // ✅ Initialize boost multiplier
-  if (!player._currentBoostMultiplier) {
-    player._currentBoostMultiplier = 1.0;
-  }
-  
-  // ✅ Smooth boost ramping
-  const targetMult = player.boosting 
-    ? gameConstants.movement.boostMultiplier 
-    : 1.0;
-  
-  const BOOST_RAMP_SPEED = 0.15;
-  player._currentBoostMultiplier += 
-    (targetMult - player._currentBoostMultiplier) * BOOST_RAMP_SPEED;
-  
-  // ✅ Calculate speed with ramped multiplier
-  const speed = baseSpeed * player._currentBoostMultiplier * goldenBoost;
+  // ✅ REPLACE WITH INSTANT BOOST:
+  const speed = (player.boosting ? baseSpeed * gameConstants.movement.boostMultiplier : baseSpeed) * goldenBoost;
   
   // ✅ Calculate new position
   const newX = player.x + Math.cos(player.angle) * speed * dt;
