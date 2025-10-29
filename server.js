@@ -387,7 +387,7 @@ function updateBotAI(bot, delta) {
       bot.targetAngle = targetAngle;
       
       // ✅ FIX: Use shared physics function
-  const dt = fixedDelta / 1000;  // Use fixed delta passed in
+ const dt = this.SERVER_TICK_MS / 1000;   // Use fixed delta passed same a s client 
       bot.angle = calculateTurnStep(
         targetAngle,
         bot.angle,
@@ -795,7 +795,7 @@ setInterval(() => {
 Object.values(gameState.players).forEach(player => {
   if (!player.alive || player.targetAngle === undefined) return;
   
-    const dt = TICK_RATE / 1000;  // Use the INTENDED tick rate, not measured
+    const dt = this.SERVER_TICK_MS / 1000;  // Use the INTENDED tick rate, not measured
   
   // ✅ Calculate angle
   player.angle = calculateTurnStep(
