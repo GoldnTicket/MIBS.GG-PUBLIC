@@ -775,11 +775,6 @@ setInterval(() => {
 let frameCount = 0;
 let lastStatsTime = Date.now();
 
-setInterval(() => {
-  const now = Date.now();
-  const delta = now - gameState.lastUpdate;
-  gameState.lastUpdate = now;
-  tickCounter++;
   
   // ✅ ADD: Performance monitoring (paste HERE)
   frameCount++;
