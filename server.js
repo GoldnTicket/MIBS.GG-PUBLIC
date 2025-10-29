@@ -937,7 +937,7 @@ setInterval(() => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`╔═══════════════════════════════════╗`);
-  console.log(`║   MIBS.GG SERVER ONLINE           ║`);
+  console.log(`║   MIBS.GG SERVER ONLINE- good     ║`);
   console.log(`╠═══════════════════════════════════╣`);
   console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
   console.log(`║ Version: ${gameConstants.version.padEnd(23)}║`);
