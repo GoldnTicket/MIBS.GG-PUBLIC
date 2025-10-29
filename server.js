@@ -8,23 +8,18 @@ const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 
+// ✅ FIX: Import shared physics module
+const { wrapAngle, calculateMarbleRadius, calculateTurnStep } = require('./shared/physics.server.js');
+
 const gameConstants = require('./constants/gameConstants.json');
 
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
-function wrapAngle(angle) {
-  while (angle > Math.PI) angle -= Math.PI * 2;
-  while (angle < -Math.PI) angle += Math.PI * 2;
-  return angle;
-}
-
-function calculateMarbleRadius(lengthScore, C) {
-  const extra = Math.max(0, lengthScore - C.player.startLength);
-  const growFrac = extra / Math.max(1, 1000 * C.player.widthVsLengthMult);
-  return (C.marble.shooterTargetWidth * 0.5) * (1 + growFrac);
-}
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 
 function calculateBountyDrop(marble, C) {
   const totalValue = marble.lengthScore * C.collision.dropValueMultiplier;
@@ -100,76 +95,77 @@ function checkCollisions(gameState, C) {
   return results;
 }
 
-// ============================================================================
-// PATHBUFFER CLASS
-// ============================================================================
-class PathBuffer {
-  constructor(sampleDistance = 2) {
-    this.samples = [];
-    this.sampleDistance = sampleDistance;
-    this.maxSamples = 2000;
-    this.totalLength = 0;
-  }
 
-  reset(x, y) {
-    this.samples = [{ x, y, dist: 0 }];
-    this.totalLength = 0;
-  }
 
-  add(x, y) {
-    if (this.samples.length === 0) {
-      this.samples.push({ x, y, dist: 0 });
-      return;
-    }
+function findSafeSpawn(gameState, minDistance, arenaRadius) {
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
+  
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * arenaRadius * 0.7;
+    const x = Math.cos(angle) * distance;
+    const y = Math.sin(angle) * distance;
     
-    const last = this.samples[this.samples.length - 1];
-    const dx = x - last.x;
-    const dy = y - last.y;
-    const dist = Math.hypot(dx, dy);
-    
-    if (dist < this.sampleDistance * 0.5) return;
-    
-    this.totalLength += dist;
-    this.samples.push({ x, y, dist: this.totalLength });
-    
-    if (this.samples.length > this.maxSamples) {
-      const removed = this.samples.shift();
-      for (const s of this.samples) {
-        s.dist -= removed.dist;
+    let isSafe = true;
+    for (const marble of allMarbles) {
+      if (!marble.alive) continue;
+      const dist = Math.hypot(x - marble.x, y - marble.y);
+      if (dist < minDistance) {
+        isSafe = false;
+        break;
       }
-      this.totalLength -= removed.dist;
-    }
-  }
-
-  sampleBack(distFromEnd) {
-    return this.sampleAt(this.totalLength - distFromEnd);
-  }
-
-  sampleAt(distance) {
-    if (this.samples.length === 0) return { x: 0, y: 0, angle: 0 };
-    if (this.samples.length === 1) return { ...this.samples[0], angle: 0 };
-    
-    distance = Math.max(0, Math.min(this.totalLength, distance));
-    
-    let left = 0, right = this.samples.length - 1;
-    while (left < right - 1) {
-      const mid = Math.floor((left + right) / 2);
-      if (this.samples[mid].dist < distance) left = mid;
-      else right = mid;
     }
     
-    const s1 = this.samples[left];
-    const s2 = this.samples[right];
-    if (s2.dist === s1.dist) return { ...s1, angle: 0 };
-    
-    const t = (distance - s1.dist) / (s2.dist - s1.dist);
-    return {
-      x: s1.x + (s2.x - s1.x) * t,
-      y: s1.y + (s2.y - s1.y) * t,
-      angle: Math.atan2(s2.y - s1.y, s2.x - s1.x)
-    };
+    if (isSafe) return { x, y };
   }
+  
+  return { x: 0, y: 0 };
 }
+
+function checkCollisions(gameState, C) {
+  const results = [];
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  
+  for (let i = 0; i < allMarbles.length; i++) {
+    for (let j = i + 1; j < allMarbles.length; j++) {
+      const m1 = allMarbles[i];
+      const m2 = allMarbles[j];
+      
+      const r1 = calculateMarbleRadius(m1.lengthScore, C);
+      const r2 = calculateMarbleRadius(m2.lengthScore, C);
+      
+      const dx = m2.x - m1.x;
+      const dy = m2.y - m1.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < r1 + r2) {
+        let killerId, victimId;
+        
+        if (m1.lengthScore > m2.lengthScore * 1.1) {
+          killerId = m1.id;
+          victimId = m2.id;
+        } else if (m2.lengthScore > m1.lengthScore * 1.1) {
+          killerId = m2.id;
+          victimId = m1.id;
+        } else {
+          continue;
+        }
+        
+        results.push({ killerId, victimId });
+      }
+    }
+  }
+  
+  return results;
+}
+
+
+// ✅ FIX: Import shared PathBuffer
+const PathBuffer = require('./shared/PathBuffer.server.js');
+
+// ============================================================================
+// SPATIAL GRID
+// ============================================================================
 
 // ============================================================================
 // SPATIAL GRID
@@ -383,29 +379,25 @@ function updateBotAI(bot, delta) {
     }
   }
   
-  // Bot movement with IDENTICAL turning
-  const dx = bot.targetX - bot.x;
-  const dy = bot.targetY - bot.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  
-  if (dist > 20) {
-    const targetAngle = Math.atan2(dy, dx);
-    bot.targetAngle = targetAngle;
+ // Bot movement with IDENTICAL turning
+    const dx = bot.targetX - bot.x;
+    const dy = bot.targetY - bot.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
     
-    // IDENTICAL turning to client
-    const leadMarbleRadius = calculateMarbleRadius(bot.lengthScore, gameConstants);
-    const dt = delta / 1000;
-    const turnPenaltyFromBoost = bot.boosting ? (1 - gameConstants.movement.boostTurnPenaltyFrac) : 1;
-    const rawMaxTurn = (gameConstants.movement.turnRateMaxDegPerSec * Math.PI / 180);
-    const sizeScale = leadMarbleRadius / (gameConstants.marble.shooterTargetWidth * 0.5);
-    const stiffK = gameConstants.movement.turnStiffnessPerScale;
-    const minTurn = gameConstants.movement.minTurnMultiplier;
-    const sizeMult = Math.max(minTurn, 1 / (1 + stiffK * (sizeScale - 1)));
-    const maxTurn = rawMaxTurn * dt * turnPenaltyFromBoost * sizeMult;
-    
-    let angleDiff = wrapAngle(targetAngle - bot.angle);
-    angleDiff = Math.max(-maxTurn, Math.min(maxTurn, angleDiff));
-    bot.angle = wrapAngle(bot.angle + angleDiff);
+    if (dist > 20) {
+      const targetAngle = Math.atan2(dy, dx);
+      bot.targetAngle = targetAngle;
+      
+      // ✅ FIX: Use shared physics function
+      const dt = delta / 1000;
+      bot.angle = calculateTurnStep(
+        targetAngle,
+        bot.angle,
+        bot.lengthScore,
+        bot.boosting,
+        gameConstants,
+        dt
+      );
     
     const goldenBoost = bot.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
     const baseSpeed = gameConstants.movement.normalSpeed;
@@ -782,23 +774,20 @@ setInterval(() => {
   gameState.lastUpdate = now;
   tickCounter++;
 
-  Object.values(gameState.players).forEach(player => {
+Object.values(gameState.players).forEach(player => {
     if (!player.alive || player.targetAngle === undefined) return;
     
     const dt = delta / 1000;
     
-    const leadMarbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
-    const turnPenaltyFromBoost = player.boosting ? (1 - gameConstants.movement.boostTurnPenaltyFrac) : 1;
-    const rawMaxTurn = (gameConstants.movement.turnRateMaxDegPerSec * Math.PI / 180);
-    const sizeScale = leadMarbleRadius / (gameConstants.marble.shooterTargetWidth * 0.5);
-    const stiffK = gameConstants.movement.turnStiffnessPerScale;
-    const minTurn = gameConstants.movement.minTurnMultiplier;
-    const sizeMult = Math.max(minTurn, 1 / (1 + stiffK * (sizeScale - 1)));
-    const maxTurn = rawMaxTurn * dt * turnPenaltyFromBoost * sizeMult;
-    
-    let angleDiff = wrapAngle(player.targetAngle - player.angle);
-    angleDiff = Math.max(-maxTurn, Math.min(maxTurn, angleDiff));
-    player.angle = wrapAngle(player.angle + angleDiff);
+    // ✅ FIX: Use shared physics function
+    player.angle = calculateTurnStep(
+      player.targetAngle,
+      player.angle,
+      player.lengthScore,
+      player.boosting,
+      gameConstants,
+      dt
+    );
     
     const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
     const baseSpeed = gameConstants.movement.normalSpeed;
