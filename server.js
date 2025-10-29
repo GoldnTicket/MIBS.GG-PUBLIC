@@ -771,6 +771,32 @@ setInterval(() => {
   const delta = now - gameState.lastUpdate;
   gameState.lastUpdate = now;
   tickCounter++;
+// ✅ ADD: Monitoring variables
+let frameCount = 0;
+let lastStatsTime = Date.now();
+
+setInterval(() => {
+  const now = Date.now();
+  const delta = now - gameState.lastUpdate;
+  gameState.lastUpdate = now;
+  tickCounter++;
+  
+  // ✅ ADD: Performance monitoring (paste HERE)
+  frameCount++;
+  
+  if (frameCount % 600 === 0) {  // Every 5 seconds at 120 FPS
+    const actualFPS = 600 / ((now - lastStatsTime) / 1000);
+    
+    console.log(`📊 Server Stats:
+    ├─ Target FPS: 120
+    ├─ Actual FPS: ${actualFPS.toFixed(1)}
+    ├─ Players: ${Object.keys(gameState.players).length}
+    ├─ Bots: ${gameState.bots.length}
+    └─ Total Entities: ${Object.keys(gameState.players).length + gameState.bots.length + gameState.coins.length}`);
+    
+    lastStatsTime = now;
+  }
+  
 Object.values(gameState.players).forEach(player => {
     if (!player.alive || player.targetAngle === undefined) return;
     
