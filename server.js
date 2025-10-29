@@ -806,6 +806,19 @@ Object.values(gameState.players).forEach(player => {
     gameConstants,
     dt
   );
+
+  // ✅ DEBUG: Log server constants (only once)
+  if (!global.constantsLogged) {
+    console.log('🔍 SERVER CONSTANTS CHECK:');
+    console.log('  turnRateMaxDegPerSec:', gameConstants.movement.turnRateMaxDegPerSec);
+    console.log('  normalSpeed:', gameConstants.movement.normalSpeed);
+    console.log('  boostMultiplier:', gameConstants.movement.boostMultiplier);
+    console.log('  turnStiffnessPerScale:', gameConstants.movement.turnStiffnessPerScale);
+    console.log('  boostTurnPenaltyFrac:', gameConstants.movement.boostTurnPenaltyFrac);
+    console.log('  minTurnMultiplier:', gameConstants.movement.minTurnMultiplier);
+    global.constantsLogged = true;
+  }
+
   
   // ✅ DECLARE variables FIRST
   const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
