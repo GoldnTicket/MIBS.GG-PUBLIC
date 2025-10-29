@@ -794,53 +794,71 @@ setInterval(() => {
   }
   
 Object.values(gameState.players).forEach(player => {
-    if (!player.alive || player.targetAngle === undefined) return;
-    
-    const dt = delta / 1000;
-    
-    // ✅ FIX: Use shared physics function
-    player.angle = calculateTurnStep(
-      player.targetAngle,
-      player.angle,
-      player.lengthScore,
-      player.boosting,
-      gameConstants,
-      dt
-    );
-    
-    const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
-    const baseSpeed = gameConstants.movement.normalSpeed;
-    const speed = (player.boosting ? baseSpeed * gameConstants.movement.boostMultiplier : baseSpeed) * goldenBoost;
-    
-    const newX = player.x + Math.cos(player.angle) * speed * dt;
-    const newY = player.y + Math.sin(player.angle) * speed * dt;
-    
-    const actualDistance = Math.hypot(newX - player.x, newY - player.y);
-    const maxAllowedDistance = speed * dt * 1.5;
-    
-    if (actualDistance > maxAllowedDistance) {
-      player.x = player._lastValidX;
-      player.y = player._lastValidY;
-      return;
-    }
-    
-    const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
-    const distFromCenter = Math.sqrt(newX * newX + newY * newY);
-    const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
-    
-    if (distFromCenter <= maxAllowedDist) {
-      player.x = newX;
-      player.y = newY;
-      player.pathBuffer.add(player.x, player.y);
-      player._lastValidX = newX;
-      player._lastValidY = newY;
-    } else {
-      player.alive = false;
-      player._markForDeath = true;
-    }
-    
-    player._lastAngle = player.angle;
-  });
+  if (!player.alive || player.targetAngle === undefined) return;
+  
+  const dt = delta / 1000;
+  
+  // ✅ Calculate angle
+  player.angle = calculateTurnStep(
+    player.targetAngle,
+    player.angle,
+    player.lengthScore,
+    player.boosting,
+    gameConstants,
+    dt
+  );
+  
+  // ✅ DECLARE variables FIRST
+  const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
+  const baseSpeed = gameConstants.movement.normalSpeed;
+  
+  // ✅ Initialize boost multiplier
+  if (!player._currentBoostMultiplier) {
+    player._currentBoostMultiplier = 1.0;
+  }
+  
+  // ✅ Smooth boost ramping
+  const targetMult = player.boosting 
+    ? gameConstants.movement.boostMultiplier 
+    : 1.0;
+  
+  const BOOST_RAMP_SPEED = 0.15;
+  player._currentBoostMultiplier += 
+    (targetMult - player._currentBoostMultiplier) * BOOST_RAMP_SPEED;
+  
+  // ✅ Calculate speed with ramped multiplier
+  const speed = baseSpeed * player._currentBoostMultiplier * goldenBoost;
+  
+  // ✅ Calculate new position
+  const newX = player.x + Math.cos(player.angle) * speed * dt;
+  const newY = player.y + Math.sin(player.angle) * speed * dt;
+  
+  const actualDistance = Math.hypot(newX - player.x, newY - player.y);
+  const maxAllowedDistance = speed * dt * 1.5;
+  
+  if (actualDistance > maxAllowedDistance) {
+    player.x = player._lastValidX;
+    player.y = player._lastValidY;
+    return;
+  }
+  
+  const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
+  const distFromCenter = Math.sqrt(newX * newX + newY * newY);
+  const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
+  
+  if (distFromCenter <= maxAllowedDist) {
+    player.x = newX;
+    player.y = newY;
+    player.pathBuffer.add(player.x, player.y);
+    player._lastValidX = newX;
+    player._lastValidY = newY;
+  } else {
+    player.alive = false;
+    player._markForDeath = true;
+  }
+  
+  player._lastAngle = player.angle;
+});
 
   Object.values(gameState.players).forEach(player => {
     if (player._markForDeath && player.alive) {
