@@ -735,7 +735,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('playerInput', (data) => {
-    if (!checkRateLimit(socket.id, 'input')) return;
     
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
