@@ -242,10 +242,7 @@ function checkRateLimit(socketId, action) {
 const MAX_BOTS = gameConstants.bot.count || 0;
 const MAX_COINS = 200;
 const TICK_RATE = 1000 / 60;
-const BROADCAST_RATE = 1000 / 60;
-let lastGameTickDeltaMs = TICK_RATE;  // Store actual frame time
 const SPATIAL_GRID_SIZE = gameConstants.collision.gridSizePx || 64;
-
 const BOT_NAMES = [
   'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
   'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
@@ -774,7 +771,6 @@ setInterval(() => {
   const delta = now - gameState.lastUpdate;
   gameState.lastUpdate = now;
   tickCounter++;
-lastGameTickDeltaMs = delta;
 Object.values(gameState.players).forEach(player => {
     if (!player.alive || player.targetAngle === undefined) return;
     
@@ -921,17 +917,15 @@ Object.values(gameState.players).forEach(player => {
     }
   });
 
-}, TICK_RATE);
-
-setInterval(() => {
+// ✅ Broadcast immediately after physics (unified tick)
   io.emit('gameState', {
-    serverDeltaMs: lastGameTickDeltaMs,  // Send actual game tick delta
+    serverDeltaMs: delta,  // Use THIS tick's delta
     players: gameState.players,
     bots: gameState.bots,
     coins: gameState.coins,
-    timestamp: Date.now()
+    timestamp: now
   });
-}, BROADCAST_RATE);
+}, TICK_RATE);
 
 // ============================================================================
 // STARTUP
