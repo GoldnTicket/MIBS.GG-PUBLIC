@@ -241,10 +241,8 @@ function checkRateLimit(socketId, action) {
 // ============================================================================
 const MAX_BOTS = gameConstants.bot.count || 0;
 const MAX_COINS = 200;
-const TICK_RATE = 1000 / 60;
-const BROADCAST_RATE = 1000 / 60;
+const TICK_RATE = 1000 / 120;
 const SPATIAL_GRID_SIZE = gameConstants.collision.gridSizePx || 64;
-
 const BOT_NAMES = [
   'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
   'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
@@ -389,7 +387,7 @@ function updateBotAI(bot, delta) {
       bot.targetAngle = targetAngle;
       
       // ✅ FIX: Use shared physics function
-      const dt = delta / 1000;
+ const dt = TICK_RATE / 1000;   // Use fixed delta passed same a s client 
       bot.angle = calculateTurnStep(
         targetAngle,
         bot.angle,
@@ -663,6 +661,8 @@ function spawnCoin() {
   });
 }
 
+
+
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
@@ -737,7 +737,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('playerInput', (data) => {
-    if (!checkRateLimit(socket.id, 'input')) return;
     
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
@@ -747,15 +746,12 @@ io.on('connection', (socket) => {
         !isFinite(data.targetAngle)) {
       return;
     }
-    
-    let normalizedAngle = data.targetAngle % (Math.PI * 2);
-    if (normalizedAngle > Math.PI) normalizedAngle -= Math.PI * 2;
-    if (normalizedAngle < -Math.PI) normalizedAngle += Math.PI * 2;
-    
-    player.targetAngle = normalizedAngle;
-    player.boosting = !!data.boosting;
-    player.lastUpdate = Date.now();
-  });
+      
+  // ✅ USE RAW ANGLE (already normalized by client):
+  player.targetAngle = data.targetAngle;
+  player.boosting = !!data.boosting;
+  player.lastUpdate = Date.now();
+});
 
   socket.on('disconnect', () => {
     delete gameState.players[socket.id];
@@ -768,60 +764,109 @@ io.on('connection', (socket) => {
 // ============================================================================
 let tickCounter = 0;
 
+// ✅ ADD: Monitoring variables
+let frameCount = 0;
+let lastStatsTime = Date.now();
+
 setInterval(() => {
   const now = Date.now();
   const delta = now - gameState.lastUpdate;
   gameState.lastUpdate = now;
   tickCounter++;
-
+  
+  
+  // ✅ ADD: Performance monitoring (paste HERE)
+  frameCount++;
+  
+  if (frameCount % 600 === 0) {  // Every 5 seconds at 120 FPS
+    const actualFPS = 600 / ((now - lastStatsTime) / 1000);
+    
+    console.log(`📊 Server Stats:
+    ├─ Target FPS: 120
+    ├─ Actual FPS: ${actualFPS.toFixed(1)}
+    ├─ Players: ${Object.keys(gameState.players).length}
+    ├─ Bots: ${gameState.bots.length}
+    └─ Total Entities: ${Object.keys(gameState.players).length + gameState.bots.length + gameState.coins.length}`);
+    
+    lastStatsTime = now;
+  }
+  
 Object.values(gameState.players).forEach(player => {
-    if (!player.alive || player.targetAngle === undefined) return;
-    
-    const dt = delta / 1000;
-    
-    // ✅ FIX: Use shared physics function
-    player.angle = calculateTurnStep(
-      player.targetAngle,
-      player.angle,
-      player.lengthScore,
-      player.boosting,
-      gameConstants,
-      dt
-    );
-    
-    const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
-    const baseSpeed = gameConstants.movement.normalSpeed;
-    const speed = (player.boosting ? baseSpeed * gameConstants.movement.boostMultiplier : baseSpeed) * goldenBoost;
-    
-    const newX = player.x + Math.cos(player.angle) * speed * dt;
-    const newY = player.y + Math.sin(player.angle) * speed * dt;
-    
-    const actualDistance = Math.hypot(newX - player.x, newY - player.y);
-    const maxAllowedDistance = speed * dt * 1.5;
-    
-    if (actualDistance > maxAllowedDistance) {
-      player.x = player._lastValidX;
-      player.y = player._lastValidY;
-      return;
-    }
-    
-    const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
-    const distFromCenter = Math.sqrt(newX * newX + newY * newY);
-    const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
-    
-    if (distFromCenter <= maxAllowedDist) {
-      player.x = newX;
-      player.y = newY;
-      player.pathBuffer.add(player.x, player.y);
-      player._lastValidX = newX;
-      player._lastValidY = newY;
-    } else {
-      player.alive = false;
-      player._markForDeath = true;
-    }
-    
-    player._lastAngle = player.angle;
-  });
+  if (!player.alive || player.targetAngle === undefined) return;
+  
+  const dt = TICK_RATE / 1000;
+  
+  // ✅ UPDATE: Tell PathBuffer about body length for auto-trimming
+  const bodyLength = player.lengthScore * 2;
+  player.pathBuffer.setMaxBodyLength(bodyLength);
+  
+  // Calculate angle
+  player.angle = calculateTurnStep(
+    player.targetAngle,
+    player.angle,
+    player.lengthScore,
+    player.boosting,
+    gameConstants,
+    dt
+  );
+
+  // ✅ DEBUG: Log server constants (only once)
+  if (!global.constantsLogged) {
+    console.log('🔍 SERVER CONSTANTS CHECK:');
+    console.log('  turnRateMaxDegPerSec:', gameConstants.movement.turnRateMaxDegPerSec);
+    console.log('  normalSpeed:', gameConstants.movement.normalSpeed);
+    console.log('  boostMultiplier:', gameConstants.movement.boostMultiplier);
+    console.log('  turnStiffnessPerScale:', gameConstants.movement.turnStiffnessPerScale);
+    console.log('  boostTurnPenaltyFrac:', gameConstants.movement.boostTurnPenaltyFrac);
+    console.log('  minTurnMultiplier:', gameConstants.movement.minTurnMultiplier);
+    global.constantsLogged = true;
+  }
+  
+// ✅ DEBUG: Log server physics calculations
+if (!player._debugCounter) player._debugCounter = 0;
+player._debugCounter++;
+
+if (player._debugCounter % 120 === 0) {  // Every 1 second at 120 FPS
+  console.log(`🎮 Player ${socket.id.substring(0,4)}: angle=${(player.angle * 180 / Math.PI).toFixed(1)}°, target=${(player.targetAngle * 180 / Math.PI).toFixed(1)}°, boost=${player.boosting}`);
+}
+  
+  // ✅ DECLARE variables FIRST
+  const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
+  const baseSpeed = gameConstants.movement.normalSpeed;
+  
+  // ✅ REPLACE WITH INSTANT BOOST:
+  const speed = (player.boosting ? baseSpeed * gameConstants.movement.boostMultiplier : baseSpeed) * goldenBoost;
+  
+  // ✅ Calculate new position
+  const newX = player.x + Math.cos(player.angle) * speed * dt;
+  const newY = player.y + Math.sin(player.angle) * speed * dt;
+  
+  const actualDistance = Math.hypot(newX - player.x, newY - player.y);
+  const maxAllowedDistance = speed * dt * 1.5;
+  
+  if (actualDistance > maxAllowedDistance) {
+    player.x = player._lastValidX;
+    player.y = player._lastValidY;
+    return;
+  }
+  
+  const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
+  const distFromCenter = Math.sqrt(newX * newX + newY * newY);
+  const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
+  
+  if (distFromCenter <= maxAllowedDist) {
+    player.x = newX;
+    player.y = newY;
+    player.pathBuffer.add(player.x, player.y);
+    player._lastValidX = newX;
+    player._lastValidY = newY;
+  } else {
+    player.alive = false;
+    player._markForDeath = true;
+  }
+  
+  player._lastAngle = player.angle;
+});
 
   Object.values(gameState.players).forEach(player => {
     if (player._markForDeath && player.alive) {
@@ -844,7 +889,7 @@ Object.values(gameState.players).forEach(player => {
   });
 
   for (const bot of gameState.bots) {
-    if (bot.alive) updateBotAI(bot, delta);
+    if (bot.alive)  updateBotAI(bot, TICK_RATE);  // Not delta!
   }
 
   checkCoinCollisions();
@@ -920,16 +965,15 @@ Object.values(gameState.players).forEach(player => {
     }
   });
 
-}, TICK_RATE);
-
-setInterval(() => {
+// ✅ Broadcast immediately after physics (unified tick)
   io.emit('gameState', {
+    serverDeltaMs: delta,  // Use THIS tick's delta
     players: gameState.players,
     bots: gameState.bots,
     coins: gameState.coins,
-    timestamp: Date.now()
+    timestamp: now
   });
-}, BROADCAST_RATE);
+}, TICK_RATE);
 
 // ============================================================================
 // STARTUP
@@ -937,7 +981,7 @@ setInterval(() => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`╔═══════════════════════════════════╗`);
-  console.log(`║   MIBS.GG SERVER ONLINE           ║`);
+  console.log(`║   MIBS.GG SERVER ONLINE- good     ║`);
   console.log(`╠═══════════════════════════════════╣`);
   console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
   console.log(`║ Version: ${gameConstants.version.padEnd(23)}║`);
