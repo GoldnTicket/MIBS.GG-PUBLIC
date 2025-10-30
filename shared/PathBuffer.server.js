@@ -1,6 +1,5 @@
 // MIBS.GG/src/shared/PathBuffer.server.js
-// ✅ Pure CommonJS PathBuffer for Node.js
-// ✅ SELF-TRIMMING: Automatically maintains correct sample count
+// âœ… Pure CommonJS PathBuffer for Node.js
 
 class PathBuffer {
   constructor(sampleDistance = 2) {
@@ -8,19 +7,11 @@ class PathBuffer {
     this.sampleDistance = sampleDistance;
     this.maxSamples = 2000;
     this.totalLength = 0;
-    this._maxBodyLength = null; // ✅ NEW: Track expected body length
   }
 
   reset(x, y) {
     this.samples = [{ x, y, dist: 0 }];
     this.totalLength = 0;
-  }
-
-  /**
-   * ✅ NEW: Set maximum body length for automatic trimming
-   */
-  setMaxBodyLength(bodyLength) {
-    this._maxBodyLength = bodyLength;
   }
 
   add(x, y) {
@@ -39,50 +30,13 @@ class PathBuffer {
     this.totalLength += dist;
     this.samples.push({ x, y, dist: this.totalLength });
     
-    // ✅ CRITICAL FIX: Auto-trim based on body length
-    if (this._maxBodyLength !== null) {
-      const maxSamples = Math.ceil(this._maxBodyLength / this.sampleDistance);
-      
-      if (this.samples.length > maxSamples) {
-        const toRemove = this.samples.length - maxSamples;
-        const removed = this.samples.splice(0, toRemove);
-        
-        if (removed.length > 0 && this.samples.length > 0) {
-          const offset = this.samples[0].dist;
-          for (const s of this.samples) {
-            s.dist -= offset;
-          }
-          this.totalLength = this.samples[this.samples.length - 1].dist;
-        }
-      }
-    }
-    else if (this.samples.length > this.maxSamples) {
+    if (this.samples.length > this.maxSamples) {
       const removed = this.samples.shift();
       const offset = removed.dist;
       for (const s of this.samples) {
         s.dist -= offset;
       }
       this.totalLength -= offset;
-    }
-  }
-
-  /**
-   * ✅ NEW: Manual trim to specific sample count
-   */
-  trimToSampleCount(maxSamples) {
-    if (this.samples.length <= maxSamples) return;
-    
-    const toRemove = this.samples.length - maxSamples;
-    const removed = this.samples.splice(0, toRemove);
-    
-    if (removed.length > 0 && this.samples.length > 0) {
-      const offset = this.samples[0].dist;
-      for (const s of this.samples) {
-        s.dist -= offset;
-      }
-      this.totalLength = this.samples.length > 0 
-        ? this.samples[this.samples.length - 1].dist 
-        : 0;
     }
   }
 
@@ -114,15 +68,6 @@ class PathBuffer {
 
   sampleBack(distFromEnd) {
     return this.sampleAt(this.totalLength - distFromEnd);
-  }
-
-  getSampleCount() {
-    return this.samples.length;
-  }
-
-  getExpectedSampleCount() {
-    if (this._maxBodyLength === null) return null;
-    return Math.ceil(this._maxBodyLength / this.sampleDistance);
   }
 }
 

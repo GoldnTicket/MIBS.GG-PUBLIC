@@ -1,6 +1,3 @@
-// MIBS.GG/src/shared/physics.server.js
-// ✅ Pure CommonJS implementation for Node.js server
-
 /**
  * Clamp value between min and max
  */
