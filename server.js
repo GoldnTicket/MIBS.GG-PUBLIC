@@ -794,9 +794,13 @@ setInterval(() => {
 Object.values(gameState.players).forEach(player => {
   if (!player.alive || player.targetAngle === undefined) return;
   
-    const dt = TICK_RATE / 1000;  // Use the INTENDED tick rate, not measured
+  const dt = TICK_RATE / 1000;
   
-  // ✅ Calculate angle
+  // ✅ UPDATE: Tell PathBuffer about body length for auto-trimming
+  const bodyLength = player.lengthScore * 2;
+  player.pathBuffer.setMaxBodyLength(bodyLength);
+  
+  // Calculate angle
   player.angle = calculateTurnStep(
     player.targetAngle,
     player.angle,
