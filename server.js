@@ -1,16 +1,14 @@
-// MIBS.GG SERVER - INPUT-BASED NETWORKING (COMPLETE REWRITE)
-// ✅ Server is fully authoritative
-// ✅ Clients send RAW mouse position + boost state
-// ✅ Server calculates angles and movement
-// ✅ Comprehensive debug logging
-// ✅ Clean, understandable architecture
+// MIBS.GG SERVER - SLITHER.IO ARCHITECTURE
+// ✅ 60 TPS (not 120!) for easier client sync
+// ✅ Input sequence tracking and acknowledgment
+// ✅ Server fully authoritative
+// ✅ Smooth, proven architecture
 
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const socketIO = require('socket.io');
 
-// Shared physics
 const { wrapAngle, calculateMarbleRadius, calculateTurnStep } = require('./shared/physics.server.js');
 const PathBuffer = require('./shared/PathBuffer.server.js');
 const gameConstants = require('./constants/gameConstants.json');
@@ -19,10 +17,10 @@ const gameConstants = require('./constants/gameConstants.json');
 // CONFIGURATION
 // ============================================================================
 const PORT = process.env.PORT || 3001;
-const TICK_RATE = 1000 / 120; // 120 FPS
+const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const MAX_BOTS = gameConstants.bot?.count || 5;
 const MAX_COINS = 200;
-const PLAYER_TIMEOUT = 15000; // 15 seconds before timeout (was 10)
+const PLAYER_TIMEOUT = 15000;
 
 const BOT_NAMES = [
   'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
@@ -30,13 +28,6 @@ const BOT_NAMES = [
 ];
 
 const MARBLE_TYPES = ['GALAXY1', 'FRANCE1', 'USA1', 'AUSSIE FLAG', 'POISON FROG', 'PEARLYWHITE'];
-
-// Debug flags
-const DEBUG = {
-  INPUT: true,      // Log player inputs
-  MOVEMENT: false,  // Log player movement
-  COLLISIONS: false // Log collisions
-};
 
 // ============================================================================
 // GAME STATE
@@ -147,8 +138,6 @@ function spawnBot(id) {
 
   bot.pathBuffer.reset(bot.x, bot.y);
   gameState.bots.push(bot);
-  
-  console.log(`🤖 Bot spawned: ${bot.name} at (${bot.x.toFixed(0)}, ${bot.y.toFixed(0)})`);
 }
 
 function killMarble(marble, killerId) {
@@ -156,7 +145,6 @@ function killMarble(marble, killerId) {
   
   marble.alive = false;
   
-  // Drop coins
   const dropValue = marble.lengthScore * (gameConstants.collision?.dropValueMultiplier || 0.5);
   const numDrops = Math.min(Math.floor(dropValue / 10), 20);
   
@@ -173,7 +161,6 @@ function killMarble(marble, killerId) {
     });
   }
   
-  // Handle killer rewards
   let killerName = 'The Arena';
   let deathType = 'wall';
   
@@ -198,7 +185,6 @@ function killMarble(marble, killerId) {
     }
   }
   
-  // Handle death notification
   if (marble.isBot) {
     const idx = gameState.bots.findIndex(b => b.id === marble.id);
     if (idx >= 0) {
@@ -226,8 +212,6 @@ function killMarble(marble, killerId) {
       delete gameState.players[marble.id];
     });
   }
-  
-  console.log(`💀 ${marble.name} killed by ${killerName} (${deathType})`);
 }
 
 function checkCollisions() {
@@ -304,7 +288,6 @@ function checkCoinCollisions() {
 }
 
 function updateBotAI(bot, dt) {
-  // Simple AI: move toward nearest coin
   let nearest = null;
   let minDist = Infinity;
   
@@ -320,7 +303,6 @@ function updateBotAI(bot, dt) {
     bot.targetX = nearest.x;
     bot.targetY = nearest.y;
   } else {
-    // Wander
     if (!bot.targetX || Math.random() < 0.01) {
       const angle = Math.random() * Math.PI * 2;
       const distance = Math.random() * gameConstants.arena.radius * 0.6;
@@ -329,7 +311,6 @@ function updateBotAI(bot, dt) {
     }
   }
   
-  // Calculate target angle
   const dx = bot.targetX - bot.x;
   const dy = bot.targetY - bot.y;
   bot.targetAngle = Math.atan2(dy, dx);
@@ -371,11 +352,8 @@ io.on('connection', (socket) => {
       isBot: false,
       isGolden: false,
       lastUpdate: Date.now(),
-      lastProcessedInput: -1,
-      pathBuffer: new PathBuffer(4),
-      // Debug counters
-      _inputCount: 0,
-      _moveCount: 0
+      lastProcessedInput: -1, // ✅ Track last processed input sequence
+      pathBuffer: new PathBuffer(4)
     };
     
     player.pathBuffer.reset(player.x, player.y);
@@ -391,19 +369,16 @@ io.on('connection', (socket) => {
     console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
   });
 
-  // ✅ INPUT-BASED: Receive raw mouse position
+  // ✅ INPUT-BASED with sequence tracking
   socket.on('playerInput', (data) => {
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
-    
-    player._inputCount++;
     
     // Validate
     if (typeof data.mouseX !== 'number' || 
         typeof data.mouseY !== 'number' ||
         isNaN(data.mouseX) || 
         isNaN(data.mouseY)) {
-      console.log(`❌ Invalid input from ${socket.id.substring(0, 8)}: mouseX=${data.mouseX}, mouseY=${data.mouseY}`);
       return;
     }
     
@@ -412,13 +387,13 @@ io.on('connection', (socket) => {
     const dy = data.mouseY - player.y;
     player.targetAngle = Math.atan2(dy, dx);
     player.boosting = !!data.boost;
-    player.lastProcessedInput = data.seq || -1;
-    player.lastUpdate = Date.now();
     
-    // Debug log (throttled)
-    if (DEBUG.INPUT && player._inputCount % 60 === 0) {
-      console.log(`📥 ${player.name}: mouse=(${data.mouseX.toFixed(0)}, ${data.mouseY.toFixed(0)}) → angle=${(player.targetAngle * 180 / Math.PI).toFixed(1)}° boost=${data.boost}`);
+    // ✅ Track input sequence
+    if (typeof data.seq === 'number' && data.seq > player.lastProcessedInput) {
+      player.lastProcessedInput = data.seq;
     }
+    
+    player.lastUpdate = Date.now();
   });
 
   socket.on('disconnect', () => {
@@ -429,13 +404,13 @@ io.on('connection', (socket) => {
 });
 
 // ============================================================================
-// GAME LOOP
+// GAME LOOP (60 TPS)
 // ============================================================================
 let tickCounter = 0;
 
 setInterval(() => {
   const now = Date.now();
-  const dt = TICK_RATE / 1000;
+  const dt = TICK_RATE / 1000; // ✅ Fixed timestep
   tickCounter++;
   
   // ========================================
@@ -444,13 +419,7 @@ setInterval(() => {
   Object.values(gameState.players).forEach(player => {
     if (!player.alive) return;
     
-    // Check if we have input
-    if (player.targetAngle === undefined) {
-      if (tickCounter % 120 === 0) {
-        console.log(`⚠️ ${player.name} has no targetAngle set`);
-      }
-      return;
-    }
+    if (player.targetAngle === undefined) return;
     
     // Turn toward target angle
     player.angle = calculateTurnStep(
@@ -479,14 +448,7 @@ setInterval(() => {
       player.x = newX;
       player.y = newY;
       player.pathBuffer.add(player.x, player.y);
-      player._moveCount++;
-      
-      // Debug log (throttled)
-      if (DEBUG.MOVEMENT && player._moveCount % 120 === 0) {
-        console.log(`🏃 ${player.name}: pos=(${player.x.toFixed(0)}, ${player.y.toFixed(0)}) angle=${(player.angle * 180 / Math.PI).toFixed(1)}° speed=${speed.toFixed(0)}`);
-      }
     } else {
-      // Hit wall
       player.alive = false;
       player._markForDeath = true;
     }
@@ -500,7 +462,6 @@ setInterval(() => {
     
     updateBotAI(bot, dt);
     
-    // Turn
     bot.angle = calculateTurnStep(
       bot.targetAngle,
       bot.angle,
@@ -510,9 +471,8 @@ setInterval(() => {
       dt
     );
     
-    // Move
     const baseSpeed = gameConstants.movement?.normalSpeed || 250;
-    const speed = baseSpeed * 0.8; // Bots move slightly slower
+    const speed = baseSpeed * 0.8;
     
     const newX = bot.x + Math.cos(bot.angle) * speed * dt;
     const newY = bot.y + Math.sin(bot.angle) * speed * dt;
@@ -571,7 +531,6 @@ setInterval(() => {
   Object.keys(gameState.players).forEach(playerId => {
     const player = gameState.players[playerId];
     if (now - player.lastUpdate > PLAYER_TIMEOUT) {
-      console.log(`⏱️ ${player.name} timed out (no input for ${PLAYER_TIMEOUT}ms)`);
       killMarble(player, null);
     }
   });
@@ -585,7 +544,7 @@ setInterval(() => {
   }
   
   // ========================================
-  // 7. BROADCAST STATE
+  // 7. BROADCAST STATE (with lastProcessedInput)
   // ========================================
   io.emit('gameState', {
     serverDeltaMs: TICK_RATE,
@@ -604,7 +563,7 @@ setInterval(() => {
           kills: p.kills,
           alive: p.alive,
           isGolden: p.isGolden,
-          lastProcessedInput: p.lastProcessedInput
+          lastProcessedInput: p.lastProcessedInput // ✅ Send back sequence
         }
       ])
     ),
@@ -632,11 +591,9 @@ setInterval(() => {
 function initializeGame() {
   console.log('🎮 Initializing game...');
   
-  // Spawn initial coins
   for (let i = 0; i < MAX_COINS; i++) spawnCoin();
   console.log(`✅ Spawned ${MAX_COINS} coins`);
   
-  // Spawn bots with delay
   for (let i = 0; i < MAX_BOTS; i++) {
     setTimeout(() => spawnBot(`bot_${Date.now()}_${i}`), i * 2000);
   }
@@ -645,11 +602,11 @@ function initializeGame() {
 
 server.listen(PORT, () => {
   console.log(`╔═══════════════════════════════════╗`);
-  console.log(`║   MIBS.GG SERVER - INPUT-BASED   ║`);
+  console.log(`║   MIBS.GG - SLITHER.IO ARCH      ║`);
   console.log(`╠═══════════════════════════════════╣`);
   console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
   console.log(`║ Version: ${gameConstants.version.padEnd(23)}║`);
-  console.log(`║ Tick Rate: 120 FPS                ║`);
+  console.log(`║ Tick Rate: 60 TPS (Slither.io)   ║`);
   console.log(`╚═══════════════════════════════════╝`);
   
   initializeGame();
