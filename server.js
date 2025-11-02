@@ -558,6 +558,7 @@ setInterval(() => {
           x: p.x,
           y: p.y,
           angle: p.angle,
+         targetAngle: p.targetAngle, // ✅ ADD THIS LINE!
           lengthScore: p.lengthScore,
           bounty: p.bounty,
           kills: p.kills,
