@@ -18,7 +18,7 @@ const gameConstants = require('./constants/gameConstants.json');
 // ============================================================================
 const PORT = process.env.PORT || 3001;
 const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
-const MAX_BOTS = gameConstants.bot?.count || 0;
+const MAX_BOTS = gameConstants.bot?.count ?? 5;
 const MAX_COINS = 200;
 const PLAYER_TIMEOUT = 15000;
 
