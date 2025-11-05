@@ -543,36 +543,54 @@ setInterval(() => {
     for (let i = 0; i < coinsToSpawn; i++) spawnCoin();
   }
   
-  // ========================================
+// ========================================
   // 7. BROADCAST STATE (with lastProcessedInput)
-  // ========================================
+  // ======================================
+  // NEVER send PathBuffer or other class instances
+  // Only send plain JSON-serializable data
+  const cleanPlayers = Object.fromEntries(
+    Object.entries(gameState.players).map(([id, p]) => [
+      id,
+      {
+        id: p.id,
+        name: p.name,
+        marbleType: p.marbleType,
+        x: p.x,
+        y: p.y,
+        angle: p.angle,
+        targetAngle: p.targetAngle,
+        lengthScore: p.lengthScore,
+        bounty: p.bounty,
+        kills: p.kills,
+        alive: p.alive,
+        isGolden: p.isGolden,
+        lastProcessedInput: p.lastProcessedInput
+        // ❌ NO pathBuffer - corrupts serialization
+        // ❌ NO lastUpdate - client doesn't need it
+        // ❌ NO boosting - client already knows
+      }
+    ])
+  );
+  
   io.emit('gameState', {
     serverDeltaMs: TICK_RATE,
-    players: Object.fromEntries(
-      Object.entries(gameState.players).map(([id, p]) => [
-        id,
-        {
-          id: p.id,
-          name: p.name,
-          marbleType: p.marbleType,
-          x: p.x,
-          y: p.y,
-          angle: p.angle,
-         targetAngle: p.targetAngle, // ✅ ADD THIS LINE!
-          lengthScore: p.lengthScore,
-          bounty: p.bounty,
-          kills: p.kills,
-          alive: p.alive,
-          isGolden: p.isGolden,
-          lastProcessedInput: p.lastProcessedInput // ✅ Send back sequence
-        }
-      ])
-    ),
-    bots: gameState.bots,
+    players: cleanPlayers,
+    bots: gameState.bots.map(b => ({
+      id: b.id,
+      name: b.name,
+      marbleType: b.marbleType,
+      x: b.x,
+      y: b.y,
+      angle: b.angle,
+      lengthScore: b.lengthScore,
+      bounty: b.bounty,
+      alive: b.alive,
+      isGolden: b.isGolden
+      // ❌ NO pathBuffer
+    })),
     coins: gameState.coins,
     timestamp: now
   });
-  
   // ========================================
   // 8. STATS
   // ========================================
