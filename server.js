@@ -613,9 +613,14 @@ function initializeGame() {
   for (let i = 0; i < MAX_COINS; i++) spawnCoin();
   console.log(`✅ Spawned ${MAX_COINS} coins`);
   
-  for (let i = 0; i < MAX_BOTS; i++) {
-    setTimeout(() => spawnBot(`bot_${Date.now()}_${i}`), i * 2000);
+   // Only spawn bots if MAX_BOTS > 0
+  if (MAX_BOTS > 0) {
+    const spawnInterval = 10000 / MAX_BOTS;
+    for (let i = 0; i < MAX_BOTS; i++) {
+      setTimeout(() => spawnBot(`bot_${Date.now()}_${i}`), i * spawnInterval);
+    }
   }
+
   console.log(`✅ Spawning ${MAX_BOTS} bots...`);
 }
 
