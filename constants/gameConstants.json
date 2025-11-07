@@ -49,7 +49,7 @@
   "spline": {
     "tension": 0.5,
     "rebuildIntervalMs": 150,
-    "pathStepPx": 4,
+    "pathStepPx": 1,
     "segmentSpacingMultiplier": 1.2
   },
   "suction": {
