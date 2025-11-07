@@ -29,14 +29,11 @@ class PathBuffer {
     
     this.totalLength += dist;
     this.samples.push({ x, y, dist: this.totalLength });
+
     
+    // Limit buffer size (smooth removal without recalculation)
     if (this.samples.length > this.maxSamples) {
-      const removed = this.samples.shift();
-      const offset = removed.dist;
-      for (const s of this.samples) {
-        s.dist -= offset;
-      }
-      this.totalLength -= offset;
+      this.samples.shift();
     }
   }
 
