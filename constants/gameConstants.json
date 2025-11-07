@@ -45,7 +45,7 @@
     "shadowOffsetX": 18,
     "shadowOffsetY": 18,
     "shadowAlpha": 0.5,
-    "shadowSizeMultiplier": 1.2
+    "shadowSizeMultiplier": 0.96
   },
   "spline": {
     "tension": 0.5,
@@ -64,9 +64,9 @@
     "minBufferFrac": 0.20,
     "pickupGraceSec": 0.20,
     "animationEnabled": true,
-    "pullAcceleration": 800,
-    "pullMaxSpeed": 400,
-    "pullLerpSpeed": 0.25
+    "pullAcceleration": 200,
+    "pullMaxSpeed": 150,
+    "pullLerpSpeed": 0.08
   },
   "collision": {
     "radiusMultiplier": 0.499,
@@ -86,17 +86,17 @@
     "radius": 30,
     "dropValueMultiplier": 2.0,
     "rollEnabled": true,
-    "rollDurationMin": 2000,
-    "rollDurationMax": 5000,
-    "rollFriction": 0.985,
-    "initialRollSpeedMin": 80,
-    "initialRollSpeedMax": 180,
+    "rollDurationMin": 25000,
+    "rollDurationMax": 35000,
+    "rollFriction": 0.9992,
+    "initialRollSpeedMin": 30,
+    "initialRollSpeedMax": 60,
     "rollCurveChance": 0.7,
     "rollCurveStrengthMin": 0.3,
     "rollCurveStrengthMax": 0.8,
     "rollAngleChangeIntervalMin": 800,
     "rollAngleChangeIntervalMax": 1500,
-    "minRollSpeed": 15,
+    "minRollSpeed": 8,
     "spinSpeedMin": 0.8,
     "spinSpeedMax": 2.5,
     "spinSpeedRollMultiplier": 0.015,
@@ -196,8 +196,8 @@
   "depths": {
     "background": -2000,
     "backgroundOuter": -1000,
-    "peeweeShadows": 3,
-    "marbleShadows": 4,
+    "peeweeShadows": 1,
+    "marbleShadows": 2,
     "peewees": 5,
     "marbleSegmentBase": 6,
     "marbleSegmentIncrement": 0.01,
