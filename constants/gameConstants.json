@@ -50,7 +50,7 @@
     "tension": 0.5,
     "rebuildIntervalMs": 150,
     "pathStepPx": 4,
-    "segmentSpacingMultiplier": 3
+    "segmentSpacingMultiplier": 3.5
   },
   "suction": {
     "extraRadius": 50,
