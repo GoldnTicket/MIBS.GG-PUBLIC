@@ -1,57 +1,51 @@
 {
-  "version": "3.0.0-peewee-physics",
+  "version": "3.0.0-complete",
   "arena": {
-    "diameter": 6000,
     "radius": 3000,
+    "diameter": 6000,
     "spawnMinDistance": 300
   },
   "movement": {
-    "normalSpeed": 200,
-    "boostMultiplier": 2.0,
-    "boostGrowthLossPerSecond": 5,
-    "turnRateMaxDegPerSec": 200,
-    "boostTurnPenaltyFrac": 0.05,
-    "turnStiffnessPerScale": 0.65,
-    "minTurnMultiplier": 0.55
+    "normalSpeed": 250,
+    "boostMultiplier": 1.6,
+    "boostSpeed": 400,
+    "turnRateMaxDegPerSec": 180,
+    "turnStiffnessPerScale": 0.15,
+    "boostTurnPenaltyFrac": 0.35,
+    "minTurnMultiplier": 0.2,
+    "boostGrowthLossPerSecond": 8
   },
   "player": {
     "startLength": 100,
     "startBounty": 1,
-    "widthVsLengthMult": 0.8
+    "widthVsLengthMult": 1.0
   },
   "bot": {
-    "count": 0,
-    "startLength": 50,
-    "startBounty": 2
+    "count": 20,
+    "startLength": 80,
+    "startBounty": 2,
+    "startBountyMax": 8
   },
   "marble": {
     "shooterTargetWidth": 50,
     "spinEnabled": true,
-    "spinSpeedMin": 1.3,
-    "spinSpeedMax": 2.0,
-    "boostSpinMultiplier": 20,
+    "spinSpeedMin": 0.5,
+    "spinSpeedMax": 1.5,
+    "boostSpinMultiplier": 3.0,
     "shadowEnabled": true,
     "shadowOffsetX": 18,
     "shadowOffsetY": 18,
-    "shadowAlpha": 0.8,
-    "shadowSizeMultiplier": 1.2
-  },
-  "spline": {
-    "pathStepPx": 1,
-    "segmentSpacingMultiplier": 1.2
-  },
-  "suction": {
-    "extraRadius": 50
-  },
-  "collision": {
-    "dropValueMultiplier": 1.0
+    "shadowAlpha": 0.5
   },
   "peewee": {
     "growthValue": 10,
     "radius": 15,
     "mass": 1.0,
     "friction": 0.98,
+    "dropValueMultiplier": 2.0,
     "rollEnabled": true,
+    "rollDurationMin": 1000,
+    "rollDurationMax": 3000,
     "initialRollSpeedMin": 80,
     "initialRollSpeedMax": 180,
     "minRollSpeed": 15,
@@ -67,6 +61,13 @@
     "spinSpeedMax": 2.5,
     "spinSpeedRollMultiplier": 0.015
   },
+  "collision": {
+    "dropValueMultiplier": 1.5,
+    "gridSizePx": 64
+  },
+  "suction": {
+    "extraRadius": 50
+  },
   "dust": {
     "enabled": true,
     "spawnChance": 0.99,
@@ -75,21 +76,10 @@
     "alphaStart": 1.0,
     "alphaEnd": 0,
     "scaleStart": 1.2,
-    "scaleEnd": 0.3,
-    "velocityMultiplier": 0.2,
-    "velocityVariation": 0.5,
-    "gravity": 50,
-    "positionOffset": 0.8,
-    "spreadAngle": 1.2,
-    "upwardBias": 50,
-    "tint": 16777215
+    "scaleEnd": 0.1,
+    "gravity": 80
   },
   "boost": {
-    "shimmerEnabled": true,
-    "shimmerSpeed": 0.08,
-    "shimmerGlowMin": 0.0,
-    "shimmerGlowMax": 0.4,
-    "shrinkageInterval": 100,
     "shrinkagePerSecond": 8,
     "spinMultiplier": 3.0
   },
@@ -127,6 +117,10 @@
     "offsetBasePx": 15,
     "offsetScaleMultiplier": 1.2,
     "transitionDuration": 150
+  },
+  "spline": {
+    "pathStepPx": 2,
+    "segmentSpacingMultiplier": 2.0
   },
   "depths": {
     "background": -2000,
@@ -170,5 +164,13 @@
     {"maxKills": 50, "label": "Master"},
     {"maxKills": 100, "label": "Champion"},
     {"maxKills": 999999999, "label": "Legend"}
-  ]
+  ],
+  "pickupThemes": {
+    "GALAXY1": {"key": "GALAXY1", "isShooter": true},
+    "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true},
+    "USA1": {"key": "USA1", "isShooter": true},
+    "FRANCE1": {"key": "FRANCE1", "isShooter": true},
+    "AUSSIE FLAG": {"key": "AUSSIE FLAG", "isShooter": true},
+    "POISON FROG": {"key": "POISON FROG", "isShooter": true}
+  }
 }
