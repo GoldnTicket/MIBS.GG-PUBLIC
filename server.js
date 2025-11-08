@@ -1,8 +1,10 @@
-// MIBS.GG-PUBLIC/server.js - COMPLETE VERSION
-// ✅ ALL original features preserved
-// ✅ Peewee physics engine added
-// ✅ NO merge conflicts
-// ✅ Line count: 950+ (more than original 641 due to added physics)
+// MIBS.GG SERVER - HYBRID BEST OF BOTH
+// ✅ 60 TPS (Slither.io) from Doc 14
+// ✅ Reconciliation system from Doc 14
+// ✅ Clean serialization from Doc 14
+// ✅ Peewee physics from Doc 15
+// ✅ Advanced features from Doc 15
+// ✅ ALL functionality preserved
 
 require('dotenv').config();
 const express = require('express');
@@ -14,7 +16,31 @@ const PathBuffer = require('./shared/PathBuffer.server.js');
 const gameConstants = require('./constants/gameConstants.json');
 
 // ============================================================================
-// PEEWEE PHYSICS ENGINE (NEW ADDITION)
+// CONFIGURATION
+// ============================================================================
+const PORT = process.env.PORT || 3001;
+const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
+const MAX_BOTS = gameConstants.bot?.count ?? 0;
+const MAX_COINS = 200;
+const PLAYER_TIMEOUT = 15000;
+const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
+
+const BOT_NAMES = [
+  'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
+  'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
+];
+
+const MARBLE_TYPES = Object.values(gameConstants.pickupThemes || {})
+  .filter(theme => theme.isShooter)
+  .map(theme => theme.key);
+
+// Fallback if no themes defined
+if (MARBLE_TYPES.length === 0) {
+  MARBLE_TYPES.push('GALAXY1', 'FRANCE1', 'USA1', 'AUSSIE FLAG', 'POISON FROG', 'PEARLYWHITE');
+}
+
+// ============================================================================
+// PEEWEE PHYSICS ENGINE (from Doc 15)
 // ============================================================================
 
 function circleCircleCollision(c1, c2, restitution = 0.8) {
@@ -133,85 +159,7 @@ function updatePeeweePhysics(dt) {
 }
 
 // ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-function calculateBountyDrop(marble, C) {
-  const totalValue = marble.lengthScore * C.collision.dropValueMultiplier;
-  const bountyValue = marble.bounty || 1;
-  return { totalValue, bountyValue };
-}
-
-function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.floor(totalValue / 10);
-  const valuePerDrop = totalValue / Math.max(1, numDrops);
-  return { numDrops, valuePerDrop };
-}
-
-function findSafeSpawn(gameState, minDistance, arenaRadius) {
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
-  
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const angle = Math.random() * Math.PI * 2;
-    const distance = Math.random() * arenaRadius * 0.7;
-    const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance;
-    
-    let isSafe = true;
-    for (const marble of allMarbles) {
-      if (!marble.alive) continue;
-      const dist = Math.hypot(x - marble.x, y - marble.y);
-      if (dist < minDistance) {
-        isSafe = false;
-        break;
-      }
-    }
-    
-    if (isSafe) return { x, y };
-  }
-  
-  return { x: 0, y: 0 };
-}
-
-function checkCollisions(gameState, C) {
-  const results = [];
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
-  
-  for (let i = 0; i < allMarbles.length; i++) {
-    for (let j = i + 1; j < allMarbles.length; j++) {
-      const m1 = allMarbles[i];
-      const m2 = allMarbles[j];
-      
-      const r1 = calculateMarbleRadius(m1.lengthScore, C);
-      const r2 = calculateMarbleRadius(m2.lengthScore, C);
-      
-      const dx = m2.x - m1.x;
-      const dy = m2.y - m1.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist < r1 + r2) {
-        let killerId, victimId;
-        
-        if (m1.lengthScore > m2.lengthScore * 1.1) {
-          killerId = m1.id;
-          victimId = m2.id;
-        } else if (m2.lengthScore > m1.lengthScore * 1.1) {
-          killerId = m2.id;
-          victimId = m1.id;
-        } else {
-          continue;
-        }
-        
-        results.push({ killerId, victimId });
-      }
-    }
-  }
-  
-  return results;
-}
-
-// ============================================================================
-// SPATIAL GRID (PRESERVED)
+// SPATIAL GRID (from Doc 15)
 // ============================================================================
 class SpatialGrid {
   constructor(cellSize, bounds) {
@@ -256,14 +204,14 @@ class SpatialGrid {
 // ============================================================================
 const gameState = {
   players: {},
-  coins: [],
   bots: [],
+  coins: [],
   lastUpdate: Date.now(),
   spatialGrid: null
 };
 
 // ============================================================================
-// RATE LIMITING (PRESERVED)
+// RATE LIMITING (from Doc 15)
 // ============================================================================
 const rateLimits = new Map();
 const RATE_LIMIT_MS = 10;
@@ -280,61 +228,51 @@ function checkRateLimit(socketId, action) {
 }
 
 // ============================================================================
-// CONFIGURATION
+// HELPER FUNCTIONS
 // ============================================================================
-const MAX_BOTS = gameConstants.bot.count || 0;
-const MAX_COINS = 200;
-const TICK_RATE = 1000 / 120;
-const SPATIAL_GRID_SIZE = gameConstants.collision.gridSizePx || 64;
-const BOT_NAMES = [
-  'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
-  'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
-];
 
-const MARBLE_TYPES = Object.values(gameConstants.pickupThemes)
-  .filter(theme => theme.isShooter)
-  .map(theme => theme.key);
+function calculateBountyDrop(marble, C) {
+  const totalValue = marble.lengthScore * (C.collision?.dropValueMultiplier || 0.5);
+  const bountyValue = marble.bounty || 1;
+  return { totalValue, bountyValue };
+}
 
-// ============================================================================
-// EXPRESS & SOCKET.IO
-// ============================================================================
-const app = express();
-const server = http.createServer(app);
+function calculateDropDistribution(totalValue, C) {
+  const numDrops = Math.floor(totalValue / 10);
+  const valuePerDrop = totalValue / Math.max(1, numDrops);
+  return { numDrops, valuePerDrop };
+}
 
-app.use(express.json());
-
-const io = socketIO(server, {
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  transports: ['websocket', 'polling'],
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true
+function findSafeSpawn(minDistance, arenaRadius) {
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
+  
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * arenaRadius * 0.7;
+    const x = Math.cos(angle) * distance;
+    const y = Math.sin(angle) * distance;
+    
+    let isSafe = true;
+    for (const marble of allMarbles) {
+      if (!marble.alive) continue;
+      const dist = Math.hypot(x - marble.x, y - marble.y);
+      if (dist < minDistance) {
+        isSafe = false;
+        break;
+      }
+    }
+    
+    if (isSafe) return { x, y };
   }
-});
+  
+  return { x: 0, y: 0 };
+}
 
 // ============================================================================
-// API ENDPOINTS
-// ============================================================================
-app.get('/api/constants', (req, res) => {
-  res.json(gameConstants);
-});
-
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    players: Object.keys(gameState.players).length,
-    bots: gameState.bots.length,
-    coins: gameState.coins.length,
-    uptime: process.uptime()
-  });
-});
-
-// ============================================================================
-// BOT AI (PRESERVED - FULL VERSION)
+// BOT AI (Advanced from Doc 15)
 // ============================================================================
 
-function findNearestCoin(marble, gameState) {
+function findNearestCoin(marble) {
   let nearest = null;
   let minDist = Infinity;
   
@@ -348,7 +286,7 @@ function findNearestCoin(marble, gameState) {
   return nearest;
 }
 
-function isInDanger(bot, gameState, gameConstants) {
+function isInDanger(bot) {
   const marbleRadius = calculateMarbleRadius(bot.lengthScore, gameConstants);
   const dangerRadius = marbleRadius + 200;
   
@@ -381,7 +319,7 @@ function updateBotAI(bot, delta) {
   
   bot._stateTimer += delta;
   
-  const dangerCheck = isInDanger(bot, gameState, gameConstants);
+  const dangerCheck = isInDanger(bot);
   
   if (dangerCheck.danger) {
     bot._aiState = 'EVADE';
@@ -400,7 +338,7 @@ function updateBotAI(bot, delta) {
     }
     
     if (bot._aiState === 'HUNT_COIN') {
-      const nearestCoin = findNearestCoin(bot, gameState);
+      const nearestCoin = findNearestCoin(bot);
       if (nearestCoin) {
         bot.targetX = nearestCoin.x;
         bot.targetY = nearestCoin.y;
@@ -438,9 +376,10 @@ function updateBotAI(bot, delta) {
       dt
     );
   
-    const goldenBoost = bot.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
-    const baseSpeed = gameConstants.movement.normalSpeed;
-    const speed = (bot.boosting ? baseSpeed * gameConstants.movement.boostMultiplier : baseSpeed) * goldenBoost;
+    const goldenBoost = bot.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
+    const baseSpeed = gameConstants.movement?.normalSpeed || 250;
+    const boostMult = gameConstants.movement?.boostMultiplier || 1.6;
+    const speed = (bot.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
     
     const newX = bot.x + Math.cos(bot.angle) * speed * dt;
     const newY = bot.y + Math.sin(bot.angle) * speed * dt;
@@ -457,8 +396,45 @@ function updateBotAI(bot, delta) {
 }
 
 // ============================================================================
-// COLLISION DETECTION (PRESERVED - FULL BODY CHECKING)
+// COLLISION DETECTION (Full body from Doc 15)
 // ============================================================================
+
+function checkCollisions() {
+  const results = [];
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  
+  for (let i = 0; i < allMarbles.length; i++) {
+    for (let j = i + 1; j < allMarbles.length; j++) {
+      const m1 = allMarbles[i];
+      const m2 = allMarbles[j];
+      
+      const r1 = calculateMarbleRadius(m1.lengthScore, gameConstants);
+      const r2 = calculateMarbleRadius(m2.lengthScore, gameConstants);
+      
+      const dx = m2.x - m1.x;
+      const dy = m2.y - m1.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < r1 + r2) {
+        let killerId, victimId;
+        
+        if (m1.lengthScore > m2.lengthScore * 1.1) {
+          killerId = m1.id;
+          victimId = m2.id;
+        } else if (m2.lengthScore > m1.lengthScore * 1.1) {
+          killerId = m2.id;
+          victimId = m1.id;
+        } else {
+          continue;
+        }
+        
+        results.push({ killerId, victimId });
+      }
+    }
+  }
+  
+  return results;
+}
 
 function checkWallCollisions() {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
@@ -530,12 +506,12 @@ function checkCoinCollisions() {
     const coin = gameState.coins[i];
     
     for (const marble of allMarbles) {
-      const dist = Math.hypot(coin.x - marble.x, coin.y - marble.y);
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-      const suctionRadius = marbleRadius + gameConstants.suction.extraRadius;
+      const suctionRadius = marbleRadius + (gameConstants.suction?.extraRadius || 50);
+      const dist = Math.hypot(coin.x - marble.x, coin.y - marble.y);
       
       if (dist < suctionRadius) {
-        // ✅ NEW: Stop physics when in suction range
+        // ✅ Stop physics when in suction range
         coin.vx = 0;
         coin.vy = 0;
         
@@ -551,7 +527,7 @@ function checkCoinCollisions() {
 }
 
 // ============================================================================
-// DEATH & DROPS (PRESERVED - GOLDEN MARBLE LOGIC)
+// DEATH & DROPS (with Golden Marble from Doc 15)
 // ============================================================================
 
 function killMarble(marble, killerId) {
@@ -570,7 +546,7 @@ function killMarble(marble, killerId) {
     const coinX = marble.x + Math.cos(angle) * distance;
     const coinY = marble.y + Math.sin(angle) * distance;
     
-    // ✅ NEW: Add physics properties to dropped coins
+    // ✅ Add physics properties to dropped coins
     gameState.coins.push({
       id: `coin_${Date.now()}_${Math.random()}`,
       x: coinX,
@@ -667,7 +643,10 @@ function updateGoldenMarble() {
 // ============================================================================
 
 function spawnBot(id) {
-  const spawnPos = findSafeSpawn(gameState, gameConstants.arena.spawnMinDistance, gameConstants.arena.radius);
+  const spawnPos = findSafeSpawn(
+    gameConstants.arena?.spawnMinDistance || 200,
+    gameConstants.arena.radius
+  );
 
   const bot = {
     id,
@@ -676,8 +655,9 @@ function spawnBot(id) {
     x: spawnPos.x,
     y: spawnPos.y,
     angle: Math.random() * Math.PI * 2,
-    lengthScore: gameConstants.bot.startLength,
-    bounty: Math.floor(Math.random() * (gameConstants.bot.startBountyMax - gameConstants.bot.startBounty)) + gameConstants.bot.startBounty,
+    targetAngle: Math.random() * Math.PI * 2,
+    lengthScore: gameConstants.bot?.startLength || 100,
+    bounty: Math.floor(Math.random() * ((gameConstants.bot?.startBountyMax || 5) - (gameConstants.bot?.startBounty || 1))) + (gameConstants.bot?.startBounty || 1),
     kills: 0,
     alive: true,
     boosting: false,
@@ -687,7 +667,7 @@ function spawnBot(id) {
     targetY: spawnPos.y,
     lastUpdate: Date.now(),
     spawnTime: Date.now(),
-    pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+    pathBuffer: new PathBuffer(gameConstants.spline?.pathStepPx || 2),
     _aiState: 'HUNT_COIN',
     _stateTimer: 0
   };
@@ -730,31 +710,47 @@ function spawnCoin() {
 }
 
 // ============================================================================
-// INITIALIZATION
+// EXPRESS & SOCKET.IO
 // ============================================================================
+const app = express();
+const server = http.createServer(app);
 
-function initializeGame() {
-  const bounds = {
-    minX: -gameConstants.arena.radius,
-    minY: -gameConstants.arena.radius,
-    maxX: gameConstants.arena.radius,
-    maxY: gameConstants.arena.radius
-  };
-  gameState.spatialGrid = new SpatialGrid(SPATIAL_GRID_SIZE, bounds);
-  
-  for (let i = 0; i < MAX_COINS; i++) spawnCoin();
-  
-  const spawnInterval = 10000 / MAX_BOTS;
-  for (let i = 0; i < MAX_BOTS; i++) {
-    setTimeout(() => spawnBot(`bot_${Date.now()}_${i}`), i * spawnInterval);
+app.use(express.json());
+
+const io = socketIO(server, {
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+    credentials: true
   }
-}
+});
 
 // ============================================================================
-// SOCKET.IO HANDLERS
+// API ENDPOINTS
+// ============================================================================
+app.get('/api/constants', (req, res) => {
+  res.json(gameConstants);
+});
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    players: Object.keys(gameState.players).length,
+    bots: gameState.bots.length,
+    coins: gameState.coins.length,
+    uptime: process.uptime()
+  });
+});
+
+// ============================================================================
+// SOCKET.IO HANDLERS (with reconciliation from Doc 14)
 // ============================================================================
 
 io.on('connection', (socket) => {
+  console.log(`🔌 Player connected: ${socket.id.substring(0, 8)}`);
+  
   socket.emit('init', {
     playerId: socket.id,
     constants: gameConstants,
@@ -766,7 +762,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('playerSetup', (data) => {
-    const spawnPos = findSafeSpawn(gameState, gameConstants.arena.spawnMinDistance, gameConstants.arena.radius);
+    const spawnPos = findSafeSpawn(
+      gameConstants.arena?.spawnMinDistance || 200,
+      gameConstants.arena.radius
+    );
 
     const player = {
       id: socket.id,
@@ -776,16 +775,16 @@ io.on('connection', (socket) => {
       y: spawnPos.y,
       angle: 0,
       targetAngle: 0,
-      lengthScore: gameConstants.player.startLength,
-      bounty: gameConstants.player.startBounty,
+      lengthScore: gameConstants.player?.startLength || 100,
+      bounty: gameConstants.player?.startBounty || 1,
       kills: 0,
       alive: true,
       boosting: false,
       isBot: false,
       isGolden: false,
       lastUpdate: Date.now(),
-      spawnTime: Date.now(),
-      pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+      lastProcessedInput: -1, // ✅ Track last processed input sequence
+      pathBuffer: new PathBuffer(gameConstants.spline?.pathStepPx || 2),
       _lastValidX: spawnPos.x,
       _lastValidY: spawnPos.y,
       _lastAngle: 0
@@ -800,31 +799,73 @@ io.on('connection', (socket) => {
       y: player.y,
       angle: player.angle
     });
+    
+    console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
   });
 
+  // ✅ INPUT-BASED with sequence tracking (from Doc 14)
   socket.on('playerInput', (data) => {
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
     
-    if (typeof data.targetAngle !== 'number' || 
-        isNaN(data.targetAngle) || 
-        !isFinite(data.targetAngle)) {
+    // Validate
+    if (typeof data.mouseX !== 'number' || 
+        typeof data.mouseY !== 'number' ||
+        isNaN(data.mouseX) || 
+        isNaN(data.mouseY)) {
       return;
     }
-      
-    player.targetAngle = data.targetAngle;
-    player.boosting = !!data.boosting;
+    
+    // ✅ Calculate target angle from mouse position (server authoritative)
+    const dx = data.mouseX - player.x;
+    const dy = data.mouseY - player.y;
+    player.targetAngle = Math.atan2(dy, dx);
+    player.boosting = !!data.boost;
+    
+    // ✅ Track input sequence for reconciliation
+    if (typeof data.seq === 'number' && data.seq > player.lastProcessedInput) {
+      player.lastProcessedInput = data.seq;
+    }
+    
     player.lastUpdate = Date.now();
   });
 
   socket.on('disconnect', () => {
+    console.log(`🔌 Player disconnected: ${socket.id.substring(0, 8)}`);
     delete gameState.players[socket.id];
     io.emit('playerLeft', { playerId: socket.id });
   });
 });
 
 // ============================================================================
-// GAME LOOP
+// INITIALIZATION
+// ============================================================================
+
+function initializeGame() {
+  console.log('🎮 Initializing game...');
+  
+  const bounds = {
+    minX: -gameConstants.arena.radius,
+    minY: -gameConstants.arena.radius,
+    maxX: gameConstants.arena.radius,
+    maxY: gameConstants.arena.radius
+  };
+  gameState.spatialGrid = new SpatialGrid(SPATIAL_GRID_SIZE, bounds);
+  
+  for (let i = 0; i < MAX_COINS; i++) spawnCoin();
+  console.log(`✅ Spawned ${MAX_COINS} coins`);
+  
+  if (MAX_BOTS > 0) {
+    const spawnInterval = 10000 / MAX_BOTS;
+    for (let i = 0; i < MAX_BOTS; i++) {
+      setTimeout(() => spawnBot(`bot_${Date.now()}_${i}`), i * spawnInterval);
+    }
+    console.log(`✅ Spawning ${MAX_BOTS} bots...`);
+  }
+}
+
+// ============================================================================
+// GAME LOOP (60 TPS)
 // ============================================================================
 let tickCounter = 0;
 let frameCount = 0;
@@ -837,6 +878,8 @@ setInterval(() => {
   tickCounter++;
   frameCount++;
   
+  const dt = TICK_RATE / 1000; // ✅ Fixed timestep
+  
   // ========================================
   // PERFORMANCE MONITORING
   // ========================================
@@ -844,7 +887,7 @@ setInterval(() => {
     const actualFPS = 600 / ((now - lastStatsTime) / 1000);
     
     console.log(`📊 Server Stats:
-    ├─ Target FPS: 120
+    ├─ Target FPS: 60
     ├─ Actual FPS: ${actualFPS.toFixed(1)}
     ├─ Players: ${Object.keys(gameState.players).length}
     ├─ Bots: ${gameState.bots.length}
@@ -854,13 +897,14 @@ setInterval(() => {
   }
   
   // ========================================
-  // UPDATE PLAYERS
+  // 1. UPDATE PLAYERS
   // ========================================
   Object.values(gameState.players).forEach(player => {
-    if (!player.alive || player.targetAngle === undefined) return;
+    if (!player.alive) return;
     
-    const dt = TICK_RATE / 1000;
+    if (player.targetAngle === undefined) return;
     
+    // Turn toward target angle
     player.angle = calculateTurnStep(
       player.targetAngle,
       player.angle,
@@ -870,13 +914,17 @@ setInterval(() => {
       dt
     );
     
-    const goldenBoost = player.isGolden ? gameConstants.golden.speedMultiplier : 1.0;
-    const baseSpeed = gameConstants.movement.normalSpeed;
-    const speed = (player.boosting ? baseSpeed * gameConstants.movement.boostMultiplier : baseSpeed) * goldenBoost;
+    // Calculate speed
+    const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
+    const baseSpeed = gameConstants.movement?.normalSpeed || 250;
+    const boostMult = gameConstants.movement?.boostMultiplier || 1.6;
+    const speed = (player.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
     
+    // Calculate new position
     const newX = player.x + Math.cos(player.angle) * speed * dt;
     const newY = player.y + Math.sin(player.angle) * speed * dt;
     
+    // Anti-cheat: max distance check
     const actualDistance = Math.hypot(newX - player.x, newY - player.y);
     const maxAllowedDistance = speed * dt * 1.5;
     
@@ -886,6 +934,7 @@ setInterval(() => {
       return;
     }
     
+    // Check arena bounds
     const marbleRadius = calculateMarbleRadius(player.lengthScore, gameConstants);
     const distFromCenter = Math.sqrt(newX * newX + newY * newY);
     const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
@@ -903,9 +952,9 @@ setInterval(() => {
     
     player._lastAngle = player.angle;
   });
-
+  
   // ========================================
-  // HANDLE PLAYER DEATHS
+  // 2. HANDLE PLAYER DEATHS
   // ========================================
   Object.values(gameState.players).forEach(player => {
     if (player._markForDeath && player.alive) {
@@ -926,26 +975,26 @@ setInterval(() => {
       killMarble(player, creditTo);
     }
   });
-
+  
   // ========================================
-  // UPDATE BOTS
+  // 3. UPDATE BOTS
   // ========================================
   for (const bot of gameState.bots) {
     if (bot.alive) updateBotAI(bot, TICK_RATE);
   }
-
-  // ========================================
-  // UPDATE PEEWEE PHYSICS (NEW)
-  // ========================================
-  updatePeeweePhysics(TICK_RATE / 1000);
   
   // ========================================
-  // COIN COLLISIONS
+  // 4. UPDATE PEEWEE PHYSICS
+  // ========================================
+  updatePeeweePhysics(dt);
+  
+  // ========================================
+  // 5. COIN COLLISIONS
   // ========================================
   checkCoinCollisions();
-
+  
   // ========================================
-  // SPATIAL GRID UPDATE
+  // 6. SPATIAL GRID UPDATE
   // ========================================
   if (gameState.spatialGrid) {
     gameState.spatialGrid.clear();
@@ -954,12 +1003,12 @@ setInterval(() => {
       gameState.spatialGrid.insertMarble(marble);
     }
   }
-
+  
   // ========================================
-  // MARBLE COLLISIONS
+  // 7. MARBLE COLLISIONS
   // ========================================
   const killedThisFrame = new Set();
-  const collisionResults = checkCollisions(gameState, gameConstants);
+  const collisionResults = checkCollisions();
   const victimToKiller = new Map();
   
   for (const collision of collisionResults) {
@@ -975,9 +1024,9 @@ setInterval(() => {
       killedThisFrame.add(victimId);
     }
   }
-
+  
   // ========================================
-  // WALL COLLISIONS
+  // 8. WALL COLLISIONS
   // ========================================
   const wallHits = checkWallCollisions();
   for (const wallHit of wallHits) {
@@ -989,22 +1038,22 @@ setInterval(() => {
       killedThisFrame.add(wallHit.marbleId);
     }
   }
-
+  
   // ========================================
-  // PERIODIC UPDATES
+  // 9. PERIODIC UPDATES
   // ========================================
   if (tickCounter % 60 === 0) {
     updateGoldenMarble();
     const coinsToSpawn = MAX_COINS - gameState.coins.length;
     for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) spawnCoin();
   }
-
+  
   // ========================================
-  // STALE PLAYER CLEANUP
+  // 10. STALE PLAYER CLEANUP
   // ========================================
   Object.keys(gameState.players).forEach(playerId => {
     const player = gameState.players[playerId];
-    if (now - player.lastUpdate > 10000) {
+    if (now - player.lastUpdate > PLAYER_TIMEOUT) {
       io.to(playerId).emit('playerDeath', {
         playerId: playerId,
         killerId: null,
@@ -1024,37 +1073,76 @@ setInterval(() => {
       });
     }
   });
-
+  
   // ========================================
-  // BROADCAST STATE
+  // 11. BROADCAST STATE (Clean serialization from Doc 14)
   // ========================================
+  // ✅ NEVER send PathBuffer or other class instances
+  // Only send plain JSON-serializable data
+  const cleanPlayers = Object.fromEntries(
+    Object.entries(gameState.players).map(([id, p]) => [
+      id,
+      {
+        id: p.id,
+        name: p.name,
+        marbleType: p.marbleType,
+        x: p.x,
+        y: p.y,
+        angle: p.angle,
+        targetAngle: p.targetAngle,
+        lengthScore: p.lengthScore,
+        bounty: p.bounty,
+        kills: p.kills,
+        alive: p.alive,
+        isGolden: p.isGolden,
+        lastProcessedInput: p.lastProcessedInput // ✅ For reconciliation
+      }
+    ])
+  );
+  
+  const cleanBots = gameState.bots.map(b => ({
+    id: b.id,
+    name: b.name,
+    marbleType: b.marbleType,
+    x: b.x,
+    y: b.y,
+    angle: b.angle,
+    lengthScore: b.lengthScore,
+    bounty: b.bounty,
+    alive: b.alive,
+    isGolden: b.isGolden
+  }));
+  
+  const cleanCoins = gameState.coins.map(c => ({
+    id: c.id,
+    x: c.x,
+    y: c.y,
+    vx: c.vx,
+    vy: c.vy,
+    radius: c.radius,
+    growthValue: c.growthValue
+  }));
+  
   io.emit('gameState', {
-    serverDeltaMs: delta,
-    players: gameState.players,
-    bots: gameState.bots,
-    coins: gameState.coins.map(c => ({
-      id: c.id,
-      x: c.x,
-      y: c.y,
-      vx: c.vx,
-      vy: c.vy,
-      radius: c.radius,
-      growthValue: c.growthValue
-    })),
+    serverDeltaMs: TICK_RATE, // ✅ Fixed timestep, not measured delta
+    players: cleanPlayers,
+    bots: cleanBots,
+    coins: cleanCoins,
     timestamp: now
   });
+  
 }, TICK_RATE);
 
 // ============================================================================
 // STARTUP
 // ============================================================================
-const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`╔═══════════════════════════════════╗`);
-  console.log(`║   MIBS.GG SERVER + PEEWEE PHYSICS║`);
+  console.log(`║   MIBS.GG - HYBRID BEST OF BOTH  ║`);
   console.log(`╠═══════════════════════════════════╣`);
   console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
   console.log(`║ Version: ${gameConstants.version.padEnd(23)}║`);
+  console.log(`║ Tick Rate: 60 TPS (Slither.io)   ║`);
   console.log(`╚═══════════════════════════════════╝`);
   
   initializeGame();
