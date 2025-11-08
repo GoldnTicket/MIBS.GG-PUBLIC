@@ -293,9 +293,11 @@ const BOT_NAMES = [
   'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
 ];
 
-const MARBLE_TYPES = Object.values(gameConstants.pickupThemes)
-  .filter(theme => theme.isShooter)
-  .map(theme => theme.key);
+const MARBLE_TYPES = [
+  'GALAXY1', 'PEARLYWHITE', 'USA1', 'FRANCE1', 'AUSSIE FLAG', 'POISON FROG',
+  'BANANASWIRL', 'BLUEMOON', 'CANADA', 'CATSEYE BLUEYELLOW', 'CATSEYE GREENBLUE',
+  'CATSEYE GREENORANGE', 'CHINA', 'KOIFISH', 'STARDUSTGREEN', 'SUNSET', 'UNICORN'
+];
 
 // ============================================================================
 // EXPRESS & SOCKET.IO
