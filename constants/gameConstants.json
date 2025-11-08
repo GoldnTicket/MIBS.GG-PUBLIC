@@ -1,11 +1,9 @@
 {
-  "version": "2.1.0-aaa-visual-polish",
+  "version": "3.0.0-peewee-physics",
   "arena": {
     "diameter": 6000,
     "radius": 3000,
-    "spawnMinDistance": 300,
-    "edgeGapPx": 30,
-    "valueCapacity": 10000
+    "spawnMinDistance": 300
   },
   "movement": {
     "normalSpeed": 200,
@@ -14,9 +12,7 @@
     "turnRateMaxDegPerSec": 200,
     "boostTurnPenaltyFrac": 0.05,
     "turnStiffnessPerScale": 0.65,
-    "minTurnMultiplier": 0.55,
-    "angleDeadbandDeg": 10,
-    "turnInputResponsePer60": 1.8
+    "minTurnMultiplier": 0.55
   },
   "player": {
     "startLength": 100,
@@ -26,134 +22,75 @@
   "bot": {
     "count": 0,
     "startLength": 50,
-    "startBounty": 2,
-    "startBountyMax": 10,
-    "thinkMsBase": 1500,
-    "lookaheadPx": 500,
-    "visionRays": 8,
-    "turnSmoothPer60": 0.25,
-    "reacquireMs": 2000
+    "startBounty": 2
   },
   "marble": {
     "shooterTargetWidth": 50,
-    "peeweeTargetWidth": 50,
     "spinEnabled": true,
     "spinSpeedMin": 1.3,
     "spinSpeedMax": 2.0,
-    "boostSpinMultiplier": 3.0,
+    "boostSpinMultiplier": 20,
     "shadowEnabled": true,
     "shadowOffsetX": 18,
     "shadowOffsetY": 18,
-    "shadowAlpha": 0.5,
-    "shadowSizeMultiplier": 0.96
+    "shadowAlpha": 0.8,
+    "shadowSizeMultiplier": 1.2
   },
   "spline": {
-    "tension": 0.5,
-    "rebuildIntervalMs": 150,
     "pathStepPx": 1,
     "segmentSpacingMultiplier": 1.2
   },
   "suction": {
-    "extraRadius": 50,
-    "coneDeg": 70,
-    "lock": true,
-    "leadMarbleMultiplier": 1.20,
-    "basePullPxPerSec": 360,
-    "maxSpeedPxPerSec": 220,
-    "velAccelPer60": 0.50,
-    "minBufferFrac": 0.20,
-    "pickupGraceSec": 0.20,
-    "animationEnabled": true,
-    "pullAcceleration": 200,
-    "pullMaxSpeed": 150,
-    "pullLerpSpeed": 0.08
+    "extraRadius": 50
   },
   "collision": {
-    "radiusMultiplier": 0.499,
-    "penetrationBufferPx": 2,
-    "updateThresholdPx": 2,
-    "gridSizePx": 200,
-    "leadMarbleOverlapMargin": 3,
-    "leadMarbleFrontConeDeg": 50,
-    "relApproachThreshold": 4,
-    "dropValueMultiplier": 1.0,
-    "growthDroppedPercent": 0.3,
-    "crashDissolveDurationMs": 500,
-    "crashFlareLifeMs": 600
+    "dropValueMultiplier": 1.0
   },
   "peewee": {
     "growthValue": 10,
-    "radius": 30,
-    "dropValueMultiplier": 2.0,
+    "radius": 15,
+    "mass": 1.0,
+    "friction": 0.98,
     "rollEnabled": true,
-    "rollDurationMin": 25000,
-    "rollDurationMax": 35000,
-    "rollFriction": 0.9992,
-    "initialRollSpeedMin": 30,
-    "initialRollSpeedMax": 60,
-    "rollCurveChance": 0.7,
-    "rollCurveStrengthMin": 0.3,
-    "rollCurveStrengthMax": 0.8,
-    "rollAngleChangeIntervalMin": 800,
-    "rollAngleChangeIntervalMax": 1500,
-    "minRollSpeed": 8,
-    "spinSpeedMin": 0.8,
-    "spinSpeedMax": 2.5,
-    "spinSpeedRollMultiplier": 0.015,
+    "initialRollSpeedMin": 80,
+    "initialRollSpeedMax": 180,
+    "minRollSpeed": 15,
     "collisionEnabled": true,
-    "bounceFactor": 0.8,
+    "bounceFactor": 0.7,
     "shadowEnabled": true,
     "shadowOffsetX": 8,
     "shadowOffsetY": 12,
     "shadowAlpha": 0.6,
     "shadowWidthMultiplier": 1.0,
-    "squashFactor": 0.99,
-    "targetWidth": 30
-  },
-  "fireball": {
-    "enabled": true,
-    "spawnIntervalMs": 200,
-    "maxCount": 10,
-    "speedMin": 200,
-    "speedMax": 300,
-    "friction": 0.98,
-    "sizeMultiplier": 0.8,
-    "trailEnabled": true,
-    "trailSpawnIntervalMs": 15,
-    "trailLifetimeMin": 1600,
-    "trailLifetimeMax": 3000,
-    "trailRiseSpeed": 20,
-    "trailAlphaStart": 0.98,
-    "trailAlphaEnd": 0,
-    "trailScaleStart": 0.8,
-    "trailScaleEnd": 0.05
+    "targetWidth": 30,
+    "spinSpeedMin": 0.8,
+    "spinSpeedMax": 2.5,
+    "spinSpeedRollMultiplier": 0.015
   },
   "dust": {
     "enabled": true,
-    "spawnChance": 0.85,
-    "lifetimeMin": 0.4,
-    "lifetimeMax": 0.8,
-    "alphaStart": 0.9,
+    "spawnChance": 0.99,
+    "lifetimeMin": 0.3,
+    "lifetimeMax": 0.6,
+    "alphaStart": 1.0,
     "alphaEnd": 0,
-    "scaleStart": 0.8,
-    "scaleEnd": 0.2,
-    "velocityMultiplier": 0.3,
-    "velocityVariation": 0.6,
-    "gravity": 80,
-    "positionOffset": 0.7,
-    "spreadAngle": 0.8,
-    "tint": 9868950
+    "scaleStart": 1.2,
+    "scaleEnd": 0.3,
+    "velocityMultiplier": 0.2,
+    "velocityVariation": 0.5,
+    "gravity": 50,
+    "positionOffset": 0.8,
+    "spreadAngle": 1.2,
+    "upwardBias": 50,
+    "tint": 16777215
   },
   "boost": {
-    "shrinkagePerSecond": 8,
-    "shrinkageInterval": 100,
-    "dustEnabled": true,
     "shimmerEnabled": true,
-    "shimmerAlphaMin": 0.3,
-    "shimmerAlphaMax": 0.8,
     "shimmerSpeed": 0.08,
-    "glowColor": 16777215,
-    "glowAlpha": 0.4,
+    "shimmerGlowMin": 0.0,
+    "shimmerGlowMax": 0.4,
+    "shrinkageInterval": 100,
+    "shrinkagePerSecond": 8,
     "spinMultiplier": 3.0
   },
   "death": {
@@ -165,21 +102,19 @@
     "explosionLifetimeMax": 1.2,
     "explosionScaleStart": 0.4,
     "explosionScaleEnd": 0.05,
-    "fadeEnabled": true,
-    "fadeDuration": 400,
-    "fadeDelay": 200,
     "cameraShake": true,
     "cameraShakeDuration": 400,
     "cameraShakeIntensity": 0.015,
+    "fadeEnabled": true,
+    "fadeDelay": 200,
+    "fadeDuration": 400,
     "segmentFadeStagger": 30
   },
   "golden": {
-    "instantPayoutFraction": 0.20,
-    "speedMultiplier": 1.10,
-    "growthDropMultiplier": 0.6
+    "speedMultiplier": 1.10
   },
   "zoom": {
-    "max": 1.2,
+    "max": 1.0,
     "min": 0.505,
     "scoreAtMin": 2000,
     "lerpPer60": 0.25,
@@ -196,15 +131,14 @@
   "depths": {
     "background": -2000,
     "backgroundOuter": -1000,
-    "peeweeShadows": 1,
-    "marbleShadows": 2,
+    "peeweeShadows": 3,
+    "marbleShadows": 4,
     "peewees": 5,
     "marbleSegmentBase": 6,
     "marbleSegmentIncrement": 0.01,
-    "marbleLeadSprite": 10,
     "boostDust": 8,
-    "boostShimmer": 9,
     "marbleContainer": 10,
+    "marbleLeadSprite": 10,
     "faces": 12,
     "effects": 15,
     "deathExplosion": 16,
@@ -214,240 +148,27 @@
   "ui": {
     "cashoutX": 16,
     "cashoutY": 16,
-    "cashoutWidth": 220,
-    "notificationMax": 5,
-    "notificationSpacing": 45,
-    "coinDepth": 0.5
-  },
-  "nugget": {
-    "valueMultiplier": 1.0,
-    "targetGrowthPoints": 500
-  },
-  "pickupThemes": {
-    "galaxy": {
-      "key": "GALAXY1",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": true,
-      "isShooter": true,
-      "glowStops": [
-        {"color": 6850815, "alpha": 1.0},
-        {"color": 3368191, "alpha": 0.95},
-        {"color": 17578, "alpha": 0.75},
-        {"color": 8806, "alpha": 0.40}
-      ]
-    },
-    "bluemoon": {
-      "key": "BLUEMOON",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": true,
-      "isShooter": true
-    },
-    "canada": {
-      "key": "CANADA",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": false,
-      "isShooter": true
-    },
-    "usa": {
-      "key": "USA1",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": false,
-      "isShooter": true
-    },
-    "aussie": {
-      "key": "AUSSIE FLAG",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": false,
-      "isShooter": true
-    },
-    "france": {
-      "key": "FRANCE1",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": true,
-      "isShooter": true
-    },
-    "stardustgreen": {
-      "key": "STARDUSTGREEN",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": true,
-      "isShooter": true
-    },
-    "china": {
-      "key": "CHINA",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": false,
-      "isShooter": true
-    },
-    "poisonfrog": {
-      "key": "POISON FROG",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 20,
-      "isGlass": false,
-      "isPeewee": true
-    },
-    "pearlywhite": {
-      "key": "PEARLYWHITE",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 20,
-      "isGlass": false,
-      "isPeewee": true
-    },
-    "bananaswirl": {
-      "key": "BANANASWIRL",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 15,
-      "isGlass": false,
-      "isPeewee": true
-    },
-    "catseyeblueyellow": {
-      "key": "CATSEYE BLUEYELLOW",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 15,
-      "isGlass": true,
-      "isPeewee": true
-    },
-    "catseyegreenblue": {
-      "key": "CATSEYE GREENBLUE",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 15,
-      "isGlass": true,
-      "isPeewee": true
-    },
-    "catseyegreenorange": {
-      "key": "CATSEYE GREENORANGE",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 15,
-      "isGlass": true,
-      "isPeewee": true
-    },
-    "koifish": {
-      "key": "KOIFISH",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 15,
-      "isGlass": false,
-      "isPeewee": true
-    },
-    "unicorn": {
-      "key": "UNICORN",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 10,
-      "isGlass": true,
-      "isPeewee": true
-    },
-    "goldenmib": {
-      "key": "GOLDEN MIB",
-      "growth": 1.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": true,
-      "isGolden": true
-    },
-    "fireball": {
-      "key": "SUNSET",
-      "growth": 50.0,
-      "displayWidth": 12,
-      "weight": 0,
-      "isGlass": true,
-      "isFireball": true
-    }
+    "cashoutWidth": 220
   },
   "cashout": {
     "tiers": [
       {"threshold": 1, "payout": 0},
-      {"threshold": 2, "payout": 0},
       {"threshold": 3, "payout": 1},
-      {"threshold": 4, "payout": 1},
       {"threshold": 5, "payout": 2},
       {"threshold": 10, "payout": 4},
       {"threshold": 20, "payout": 8},
       {"threshold": 50, "payout": 24},
       {"threshold": 100, "payout": 40},
       {"threshold": 200, "payout": 80},
-      {"threshold": 300, "payout": 80},
-      {"threshold": 400, "payout": 80},
-      {"threshold": 500, "payout": 80},
-      {"threshold": 600, "payout": 80},
-      {"threshold": 700, "payout": 80},
-      {"threshold": 800, "payout": 80},
-      {"threshold": 900, "payout": 80},
-      {"threshold": 1000, "payout": 80},
-      {"threshold": 2000, "payout": 750},
-      {"threshold": 3000, "payout": 750},
-      {"threshold": 4000, "payout": 750},
-      {"threshold": 5000, "payout": 750},
-      {"threshold": 6000, "payout": 750},
-      {"threshold": 7000, "payout": 750},
-      {"threshold": 8000, "payout": 750},
-      {"threshold": 9000, "payout": 750},
-      {"threshold": 10000, "payout": 750},
-      {"threshold": 20000, "payout": 7000},
-      {"threshold": 30000, "payout": 7000},
-      {"threshold": 40000, "payout": 7000},
-      {"threshold": 50000, "payout": 7000},
-      {"threshold": 60000, "payout": 7000},
-      {"threshold": 70000, "payout": 7000},
-      {"threshold": 80000, "payout": 7000},
-      {"threshold": 90000, "payout": 7000},
-      {"threshold": 100000, "payout": 7000},
-      {"threshold": 200000, "payout": 70000},
-      {"threshold": 300000, "payout": 70000},
-      {"threshold": 400000, "payout": 70000},
-      {"threshold": 500000, "payout": 70000},
-      {"threshold": 600000, "payout": 70000},
-      {"threshold": 700000, "payout": 70000},
-      {"threshold": 800000, "payout": 70000},
-      {"threshold": 900000, "payout": 70000},
-      {"threshold": 1000000, "payout": 70000},
       {"threshold": 999999999, "payout": 1000000}
     ]
   },
   "ranks": [
     {"maxKills": 0, "label": "NOOB"},
-    {"maxKills": 5, "label": "Beginner I"},
-    {"maxKills": 10, "label": "Beginner II"},
-    {"maxKills": 15, "label": "Beginner III"},
-    {"maxKills": 20, "label": "Beginner IV"},
-    {"maxKills": 30, "label": "Beginner V"},
-    {"maxKills": 40, "label": "Collector I"},
-    {"maxKills": 50, "label": "Collector II"},
-    {"maxKills": 60, "label": "Collector III"},
-    {"maxKills": 70, "label": "Collector IV"},
-    {"maxKills": 80, "label": "Collector V"},
-    {"maxKills": 90, "label": "Master I"},
-    {"maxKills": 100, "label": "Master II"},
-    {"maxKills": 150, "label": "Master III"},
-    {"maxKills": 200, "label": "Master IV"},
-    {"maxKills": 250, "label": "Master V"},
-    {"maxKills": 350, "label": "Champion I"},
-    {"maxKills": 450, "label": "Champion II"},
-    {"maxKills": 550, "label": "Champion III"},
-    {"maxKills": 700, "label": "Legend I"},
-    {"maxKills": 850, "label": "Legend II"},
-    {"maxKills": 1000, "label": "Legend III"},
-    {"maxKills": 999999999, "label": "Marble Supreme"}
+    {"maxKills": 5, "label": "Beginner"},
+    {"maxKills": 20, "label": "Collector"},
+    {"maxKills": 50, "label": "Master"},
+    {"maxKills": 100, "label": "Champion"},
+    {"maxKills": 999999999, "label": "Legend"}
   ]
 }
