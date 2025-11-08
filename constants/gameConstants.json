@@ -6,22 +6,22 @@
     "spawnMinDistance": 300
   },
   "movement": {
-    "normalSpeed": 250,
-    "boostMultiplier": 1.6,
-    "boostSpeed": 400,
+    "normalSpeed": 200,
+    "boostMultiplier": 1.8,
+    "boostSpeed": 360,
     "turnRateMaxDegPerSec": 180,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
-    "minTurnMultiplier": 0.2,
-    "boostGrowthLossPerSecond": 8
+    "minTurnMultiplier": 0.3,
+    "boostGrowthLossPerSecond": 5
   },
   "player": {
-    "startLength": 100,
+    "startLength": 200,
     "startBounty": 1,
     "widthVsLengthMult": 1.0
   },
   "bot": {
-    "count": 20,
+    "count": 50,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
@@ -62,7 +62,7 @@
     "spinSpeedRollMultiplier": 0.015
   },
   "collision": {
-    "dropValueMultiplier": 1.5,
+    "dropValueMultiplier": 2.5,
     "gridSizePx": 64
   },
   "suction": {
@@ -77,19 +77,19 @@
     "alphaEnd": 0,
     "scaleStart": 1.2,
     "scaleEnd": 0.1,
-    "gravity": 80
+    "gravity": 60
   },
   "boost": {
-    "shrinkagePerSecond": 8,
-    "spinMultiplier": 3.0
+    "shrinkagePerSecond": 6,
+    "spinMultiplier": 5.0
   },
   "death": {
     "explosionEnabled": true,
-    "explosionParticles": 40,
+    "explosionParticles": 400,
     "explosionSpeedMin": 180,
     "explosionSpeedMax": 400,
-    "explosionLifetimeMin": 0.6,
-    "explosionLifetimeMax": 1.2,
+    "explosionLifetimeMin": 600,
+    "explosionLifetimeMax": 1400,
     "explosionScaleStart": 0.4,
     "explosionScaleEnd": 0.05,
     "cameraShake": true,
@@ -119,23 +119,23 @@
     "transitionDuration": 150
   },
   "spline": {
-    "pathStepPx": 2,
-    "segmentSpacingMultiplier": 2.0
+    "pathStepPx": 1,
+    "segmentSpacingMultiplier": 1.2
   },
   "depths": {
     "background": -2000,
     "backgroundOuter": -1000,
-    "peeweeShadows": 3,
-    "marbleShadows": 4,
-    "peewees": 5,
-    "marbleSegmentBase": 6,
+    "peeweeShadows": 1,
+    "marbleShadows": 1,
+    "peewees": 2,
+    "marbleSegmentBase": 3,
     "marbleSegmentIncrement": 0.01,
-    "boostDust": 8,
-    "marbleContainer": 10,
-    "marbleLeadSprite": 10,
-    "faces": 12,
+    "boostDust": 100,
+    "marbleContainer": 3,
+    "marbleLeadSprite": 3,
+    "faces": 4,
     "effects": 15,
-    "deathExplosion": 16,
+    "deathExplosion": 160,
     "ui": 3000,
     "overlay": 9000
   },
