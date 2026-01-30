@@ -122,23 +122,23 @@
     "pathStepPx": 1,
     "segmentSpacingMultiplier": 1.2
   },
-  "depths": {
-    "background": -2000,
-    "backgroundOuter": -1000,
-    "peeweeShadows": 1,
-    "marbleShadows": 1,
-    "peewees": 2,
-    "marbleSegmentBase": 3,
-    "marbleSegmentIncrement": 0.01,
-    "boostDust": 100,
-    "marbleContainer": 3,
-    "marbleLeadSprite": 3,
-    "faces": 4,
-    "effects": 15,
-    "deathExplosion": 160,
-    "ui": 3000,
-    "overlay": 9000
-  },
+"depths": {
+  "background": -2000,
+  "backgroundOuter": -1000,
+  "peeweeShadows": 1,
+  "boostDust": 2,
+  "peewees": 5,
+  "marbleShadows": 4,
+  "marbleSegmentBase": 6,
+  "marbleSegmentIncrement": 0.01,
+  "marbleContainer": 10,
+  "marbleLeadSprite": 10,
+  "faces": 12,
+  "effects": 15,
+  "deathExplosion": 160,
+  "ui": 3000,
+  "overlay": 9000
+}
   "ui": {
     "cashoutX": 16,
     "cashoutY": 16,
