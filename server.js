@@ -581,11 +581,13 @@ function killMarble(marble, killerId) {
   const dropInfo = calculateBountyDrop(marble, gameConstants);
   
   // ✅ Calculate number of segments (2x peewees per segment)
-  const radius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-  const segmentSpacing = radius * 2;
+const radius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+  const segmentSpacing = radius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
   const bodyLength = marble.lengthScore * 2;
   const numSegments = Math.floor(bodyLength / segmentSpacing);
-  const numPeewees = numSegments * 2;  // 2x peewees per segment
+  const numPeewees = Math.max(4, numSegments * 2);  // 2x peewees per segment (minimum 4)
+  
+  console.log(`💀 ${marble.name || 'Marble'} died: ${numSegments} segments → ${numPeewees} peewees (${marble.marbleType})`);
   const valuePerPeewee = dropInfo.totalValue / Math.max(1, numPeewees);
   
   const coinsToSpawn = Math.min(numPeewees, MAX_COINS - gameState.coins.length);
@@ -599,8 +601,8 @@ function killMarble(marble, killerId) {
       id: `coin_${Date.now()}_${Math.random()}`,
       x: marble.x + Math.cos(angle) * distance,
       y: marble.y + Math.sin(angle) * distance,
-      vx: Math.cos(angle) * (100 + Math.random() * 100),  // ✅ Initial velocity
-      vy: Math.sin(angle) * (100 + Math.random() * 100),
+   vx: Math.cos(angle) * (30 + Math.random() * 30),  // ✅ Slower roll (30-80 speed)
+      vy: Math.sin(angle) * (30 + Math.random() * 30),
       growthValue: Math.floor(valuePerPeewee) || 5,
       radius: gameConstants.peewee.radius,
       marbleType: marbleType  // ✅ Store marble type for rendering
@@ -1168,14 +1170,15 @@ const collisionResults = checkCollisions(gameState, gameConstants);
     isGolden: b.isGolden
   }));
   
-  const cleanCoins = gameState.coins.map(c => ({
+const cleanCoins = gameState.coins.map(c => ({
     id: c.id,
     x: c.x,
     y: c.y,
     vx: c.vx,
     vy: c.vy,
     radius: c.radius,
-    growthValue: c.growthValue
+    growthValue: c.growthValue,
+    marbleType: c.marbleType  // ✅ CRITICAL: Send marble type to client!
   }));
   
   io.emit('gameState', {
