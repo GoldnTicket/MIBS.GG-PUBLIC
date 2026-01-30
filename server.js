@@ -40,123 +40,109 @@ if (MARBLE_TYPES.length === 0) {
 }
 
 // ============================================================================
-// PEEWEE PHYSICS ENGINE (from Doc 15)
+// PEEWEE PHYSICS UPDATE
 // ============================================================================
-
-function circleCircleCollision(c1, c2, restitution = 0.8) {
-  const dx = c2.x - c1.x;
-  const dy = c2.y - c1.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const minDist = c1.radius + c2.radius;
-  
-  if (dist >= minDist || dist === 0) return;
-  
-  const nx = dx / dist;
-  const ny = dy / dist;
-  
-  const dvx = c2.vx - c1.vx;
-  const dvy = c2.vy - c1.vy;
-  const dvn = dvx * nx + dvy * ny;
-  
-  if (dvn > 0) return;
-  
-  const impulse = -(1 + restitution) * dvn / (1 / c1.mass + 1 / c2.mass);
-  
-  c1.vx -= impulse * nx / c1.mass;
-  c1.vy -= impulse * ny / c1.mass;
-  c2.vx += impulse * nx / c2.mass;
-  c2.vy += impulse * ny / c2.mass;
-  
-  const overlap = minDist - dist;
-  const separationRatio = overlap / (c1.mass + c2.mass);
-  c1.x -= nx * separationRatio * c2.mass;
-  c1.y -= ny * separationRatio * c2.mass;
-  c2.x += nx * separationRatio * c1.mass;
-  c2.y += ny * separationRatio * c1.mass;
-}
-
-function wallBounce(peewee, arenaRadius, restitution = 0.6) {
-  const dist = Math.sqrt(peewee.x * peewee.x + peewee.y * peewee.y);
-  const maxDist = arenaRadius - peewee.radius;
-  
-  if (dist > maxDist) {
-    const nx = peewee.x / dist;
-    const ny = peewee.y / dist;
-    
-    const dot = peewee.vx * nx + peewee.vy * ny;
-    peewee.vx -= 2 * dot * nx * restitution;
-    peewee.vy -= 2 * dot * ny * restitution;
-    
-    peewee.x = nx * maxDist;
-    peewee.y = ny * maxDist;
-  }
-}
-
-function marbleChainCollision(peewee, marble, gameConstants) {
-  const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-  
-  const dx = peewee.x - marble.x;
-  const dy = peewee.y - marble.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  
-  if (dist < peewee.radius + marbleRadius && dist > 0) {
-    const nx = dx / dist;
-    const ny = dy / dist;
-    
-    const dot = peewee.vx * nx + peewee.vy * ny;
-    peewee.vx -= 2 * dot * nx * 0.7;
-    peewee.vy -= 2 * dot * ny * 0.7;
-    
-    const overlap = (peewee.radius + marbleRadius) - dist;
-    peewee.x += nx * overlap;
-    peewee.y += ny * overlap;
-  }
-}
-
 function updatePeeweePhysics(dt) {
-  const C = gameConstants;
+  const friction = 0.98;
+  const gravity = 20;  // Slight downward drift
+  const bounceMultiplier = 0.7;  // Energy loss on bounce
   
-  // Update positions
-  for (const coin of gameState.coins) {
-    coin.vx *= coin.friction || 0.98;
-    coin.vy *= coin.friction || 0.98;
+  for (const peewee of gameState.coins) {
+    // Apply velocity
+    peewee.x += peewee.vx * dt;
+    peewee.y += peewee.vy * dt;
     
-    const speed = Math.sqrt(coin.vx * coin.vx + coin.vy * coin.vy);
-    if (speed < (C.peewee?.minRollSpeed || 15)) {
-      coin.vx = 0;
-      coin.vy = 0;
+    // Apply friction
+    peewee.vx *= friction;
+    peewee.vy *= friction;
+    
+    // Apply gravity
+    peewee.vy += gravity * dt;
+    
+    // Stop if moving very slowly
+    if (Math.abs(peewee.vx) < 5 && Math.abs(peewee.vy) < 5) {
+      peewee.vx = 0;
+      peewee.vy = 0;
     }
     
-    coin.x += coin.vx * dt;
-    coin.y += coin.vy * dt;
-  }
-  
-  // Peewee-peewee collisions
-  if (C.peewee?.collisionEnabled) {
-    for (let i = 0; i < gameState.coins.length; i++) {
-      for (let j = i + 1; j < gameState.coins.length; j++) {
-        circleCircleCollision(
-          gameState.coins[i],
-          gameState.coins[j],
-          C.peewee?.bounceFactor || 0.8
-        );
+    // ✅ WALL COLLISION
+    const distFromCenter = Math.sqrt(peewee.x * peewee.x + peewee.y * peewee.y);
+    if (distFromCenter + peewee.radius > gameConstants.arena.radius) {
+      // Calculate normal vector (pointing inward)
+      const nx = -peewee.x / distFromCenter;
+      const ny = -peewee.y / distFromCenter;
+      
+      // Reflect velocity
+      const dot = peewee.vx * nx + peewee.vy * ny;
+      peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
+      peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+      
+      // Push back inside arena
+      const overlap = (distFromCenter + peewee.radius) - gameConstants.arena.radius;
+      peewee.x -= nx * overlap;
+      peewee.y -= ny * overlap;
+    }
+    
+    // ✅ MARBLE COLLISION (bounce off player/bot marbles)
+    const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
+      .filter(m => m.alive);
+    
+    for (const marble of allMarbles) {
+      const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+      const dx = peewee.x - marble.x;
+      const dy = peewee.y - marble.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < marbleRadius + peewee.radius) {
+        // Calculate normal
+        const nx = dx / dist;
+        const ny = dy / dist;
+        
+        // Reflect velocity
+        const dot = peewee.vx * nx + peewee.vy * ny;
+        peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
+        peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+        
+        // Push away from marble
+        const overlap = (marbleRadius + peewee.radius) - dist;
+        peewee.x += nx * overlap;
+        peewee.y += ny * overlap;
+      }
+    }
+    
+    // ✅ PEEWEE-PEEWEE COLLISION
+    for (const other of gameState.coins) {
+      if (other === peewee) continue;
+      
+      const dx = other.x - peewee.x;
+      const dy = other.y - peewee.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = peewee.radius + other.radius;
+      
+      if (dist < minDist && dist > 0) {
+        // Calculate normal
+        const nx = dx / dist;
+        const ny = dy / dist;
+        
+        // Exchange velocities (simplified elastic collision)
+        const tempVx = peewee.vx;
+        const tempVy = peewee.vy;
+        peewee.vx = other.vx * bounceMultiplier;
+        peewee.vy = other.vy * bounceMultiplier;
+        other.vx = tempVx * bounceMultiplier;
+        other.vy = tempVy * bounceMultiplier;
+        
+        // Separate peewees
+        const overlap = minDist - dist;
+        peewee.x -= nx * (overlap / 2);
+        peewee.y -= ny * (overlap / 2);
+        other.x += nx * (overlap / 2);
+        other.y += ny * (overlap / 2);
       }
     }
   }
-  
-  // Wall bounces
-  for (const coin of gameState.coins) {
-    wallBounce(coin, C.arena.radius, C.peewee?.bounceFactor || 0.6);
-  }
-  
-  // Marble chain collisions
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
-  for (const coin of gameState.coins) {
-    for (const marble of allMarbles) {
-      marbleChainCollision(coin, marble, C);
-    }
-  }
 }
+  
 
 // ============================================================================
 // SPATIAL GRID (from Doc 15)
@@ -590,27 +576,31 @@ function killMarble(marble, killerId) {
   marble.alive = false;
   
   const dropInfo = calculateBountyDrop(marble, gameConstants);
-  const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants);
   
-  const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
+  // ✅ Calculate number of segments (2x peewees per segment)
+  const radius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+  const segmentSpacing = radius * 2;
+  const bodyLength = marble.lengthScore * 2;
+  const numSegments = Math.floor(bodyLength / segmentSpacing);
+  const numPeewees = numSegments * 2;  // 2x peewees per segment
+  const valuePerPeewee = dropInfo.totalValue / Math.max(1, numPeewees);
+  
+  const coinsToSpawn = Math.min(numPeewees, MAX_COINS - gameState.coins.length);
+  const marbleType = marble.marbleType || 'GALAXY1';  // ✅ Get marble's type
+  
   for (let i = 0; i < coinsToSpawn; i++) {
     const angle = (i / coinsToSpawn) * Math.PI * 2;
     const distance = 50 + Math.random() * 100;
     
-    const coinX = marble.x + Math.cos(angle) * distance;
-    const coinY = marble.y + Math.sin(angle) * distance;
-    
-    // ✅ Add physics properties to dropped coins
     gameState.coins.push({
       id: `coin_${Date.now()}_${Math.random()}`,
-      x: coinX,
-      y: coinY,
-      vx: Math.cos(angle) * 150,
-      vy: Math.sin(angle) * 150,
-      radius: gameConstants.peewee?.radius || 15,
-      mass: gameConstants.peewee?.mass || 1.0,
-      growthValue: Math.floor(dropDist.valuePerDrop) || 5,
-      friction: gameConstants.peewee?.friction || 0.98
+      x: marble.x + Math.cos(angle) * distance,
+      y: marble.y + Math.sin(angle) * distance,
+      vx: Math.cos(angle) * (100 + Math.random() * 100),  // ✅ Initial velocity
+      vy: Math.sin(angle) * (100 + Math.random() * 100),
+      growthValue: Math.floor(valuePerPeewee) || 5,
+      radius: gameConstants.peewee.radius,
+      marbleType: marbleType  // ✅ Store marble type for rendering
     });
   }
   
@@ -742,7 +732,7 @@ function spawnCoin() {
     y: Math.sin(angle) * distance,
     vx: 0,
     vy: 0,
-    radius: gameConstants.peewee?.radius || 15,
+    radius: gameConstants.peewee?.radius || 25,
     mass: gameConstants.peewee?.mass || 1.0,
     growthValue: gameConstants.peewee?.growthValue || 10,
     friction: gameConstants.peewee?.friction || 0.98
@@ -1040,7 +1030,9 @@ setInterval(() => {
   // ========================================
   // 4. UPDATE PEEWEE PHYSICS
   // ========================================
-  updatePeeweePhysics(dt);
+ updatePeeweePhysics(delta / 1000);
+  
+
   
   // ========================================
   // 5. COIN COLLISIONS
