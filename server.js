@@ -393,9 +393,10 @@ function checkCollisions(gameState, C) {
   // ✅ For each marble, check its HEAD against ALL other marbles (head + body)
   for (let i = 0; i < allMarbles.length; i++) {
     const marble = allMarbles[i];
-    if (!marble.alive) continue;
-    
+    if (!marble.alive) continue;    
     const headRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+          // ✅ SPAWN PROTECTION: Skip collision if either marble just spawned
+      if (m1.spawnProtection || m2.spawnProtection) continue;
     
     // Check against ALL other marbles
     for (let j = 0; j < allMarbles.length; j++) {
@@ -823,6 +824,8 @@ io.on('connection', (socket) => {
       bounty: gameConstants.player?.startBounty || 1,
       kills: 0,
       alive: true,
+            spawnProtection: true,  // ✅ NEW: Spawn protection flag
+      spawnTime: Date.now(),  // ✅ NEW: Track spawn time
       boosting: false,
       isBot: false,
       isGolden: false,
@@ -945,7 +948,10 @@ setInterval(() => {
   // ========================================
   Object.values(gameState.players).forEach(player => {
     if (!player.alive) return;
-    
+      // ✅ REMOVE SPAWN PROTECTION AFTER 3 SECONDS
+  if (player.spawnProtection && Date.now() - player.spawnTime > 2000) {
+    player.spawnProtection = false;
+  }
     if (player.targetAngle === undefined) return;
     
     // Turn toward target angle
