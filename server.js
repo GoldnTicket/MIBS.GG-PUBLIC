@@ -396,39 +396,114 @@ function updateBotAI(bot, delta) {
 }
 
 // ============================================================================
-// COLLISION DETECTION (Full body from Doc 15)
+// COLLISION DETECTION (HEAD-to-BODY + HEAD-to-HEAD with angle logic)
 // ============================================================================
 
-function checkCollisions() {
+function checkCollisions(gameState, C) {
   const results = [];
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  const processed = new Set(); // Prevent duplicate collision checks
   
-  for (let i = 0; i < allMarbles.length; i++) {
-    for (let j = i + 1; j < allMarbles.length; j++) {
-      const m1 = allMarbles[i];
-      const m2 = allMarbles[j];
-      
-      const r1 = calculateMarbleRadius(m1.lengthScore, gameConstants);
-      const r2 = calculateMarbleRadius(m2.lengthScore, gameConstants);
-      
-      const dx = m2.x - m1.x;
-      const dy = m2.y - m1.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      if (dist < r1 + r2) {
-        let killerId, victimId;
+  // Build spatial grid with heads AND body segments
+  if (gameState.spatialGrid) {
+    gameState.spatialGrid.clear();
+    for (const marble of allMarbles) {
+      gameState.spatialGrid.insertMarble(marble);
+    }
+  }
+  
+  // Check each marble's HEAD against all nearby entities
+  for (const marble of allMarbles) {
+    if (!marble.alive) continue;
+    
+    const headRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+    const searchRadius = headRadius + 100; // Extra range for nearby checks
+    
+    // Query spatial grid for entities near this marble's head
+    const cellX = Math.floor(marble.x / (gameState.spatialGrid?.cellSize || 64));
+    const cellY = Math.floor(marble.y / (gameState.spatialGrid?.cellSize || 64));
+    
+    // Check 3x3 grid around head position
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const key = `${cellX + dx},${cellY + dy}`;
+        const entities = gameState.spatialGrid?.grid.get(key) || [];
         
-        if (m1.lengthScore > m2.lengthScore * 1.1) {
-          killerId = m1.id;
-          victimId = m2.id;
-        } else if (m2.lengthScore > m1.lengthScore * 1.1) {
-          killerId = m2.id;
-          victimId = m1.id;
-        } else {
-          continue;
+        for (const entity of entities) {
+          // Skip self-collision
+          if (entity.id === marble.id) continue;
+          
+          // Skip if already processed this pair
+          const pairKey = [marble.id, entity.id].sort().join('-');
+          if (processed.has(pairKey)) continue;
+          
+          const dx = entity.x - marble.x;
+          const dy = entity.y - marble.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          
+          const entityRadius = entity.isSegment 
+            ? calculateMarbleRadius(entity.lengthScore, gameConstants) * 0.9
+            : calculateMarbleRadius(entity.lengthScore, gameConstants);
+          
+          // Check collision
+          if (dist < headRadius + entityRadius) {
+            processed.add(pairKey);
+            
+            // ✅ HEAD-to-BODY collision (marble's head hit entity's body)
+            if (entity.isSegment) {
+              // Marble dies (ran into body segment)
+              results.push({ 
+                killerId: entity.id,  // Body owner wins
+                victimId: marble.id   // Head dies
+              });
+              continue;
+            }
+            
+            // ✅ HEAD-to-HEAD collision (use angle comparison)
+            // Calculate collision point (midpoint between heads)
+            const collisionX = (marble.x + entity.x) / 2;
+            const collisionY = (marble.y + entity.y) / 2;
+            
+            // Angle from marble's head to collision point
+            const angleFromMarble = Math.atan2(
+              collisionY - marble.y,
+              collisionX - marble.x
+            );
+            const relativeAngleMarble = Math.abs(wrapAngle(angleFromMarble - marble.angle));
+            
+            // Angle from entity's head to collision point
+            const angleFromEntity = Math.atan2(
+              collisionY - entity.y,
+              collisionX - entity.x
+            );
+            const relativeAngleEntity = Math.abs(wrapAngle(angleFromEntity - entity.angle));
+            
+            // SMALLER angle = more aggressive = DIES
+            if (relativeAngleMarble < relativeAngleEntity) {
+              // Marble was more aggressive (ran straight into entity)
+              results.push({ 
+                killerId: entity.id,  // Entity wins
+                victimId: marble.id   // Marble dies
+              });
+            } else if (relativeAngleEntity < relativeAngleMarble) {
+              // Entity was more aggressive (ran straight into marble)
+              results.push({ 
+                killerId: marble.id,  // Marble wins
+                victimId: entity.id   // Entity dies
+              });
+            } else {
+              // Exactly equal angles (extremely rare) - both die
+              results.push({ 
+                killerId: null,       // No winner
+                victimId: marble.id   // Marble dies
+              });
+              results.push({ 
+                killerId: null,       // No winner
+                victimId: entity.id   // Entity dies
+              });
+            }
+          }
         }
-        
-        results.push({ killerId, victimId });
       }
     }
   }
