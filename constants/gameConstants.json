@@ -21,7 +21,7 @@
     "widthVsLengthMult": 1.0
   },
   "bot": {
-    "count": 10,
+    "count": 9,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
