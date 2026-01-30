@@ -21,7 +21,7 @@
     "widthVsLengthMult": 1.0
   },
   "bot": {
-    "count": 5,
+    "count": 10,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
@@ -38,9 +38,9 @@
     "shadowAlpha": 0.8
   },
   "peewee": {
-    "growthValue": 10,
+    "growthValue": 20,
     "radius": 50,
-    "mass": 1.0,
+    "mass": 2.0,
     "friction": 0.98,
     "dropValueMultiplier": 2.0,
     "rollEnabled": true,
