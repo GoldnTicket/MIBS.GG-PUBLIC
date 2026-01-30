@@ -30,11 +30,11 @@
     "shooterTargetWidth": 50,
     "spinEnabled": true,
     "spinSpeedMin": 0.5,
-    "spinSpeedMax": 5.5,
-    "boostSpinMultiplier": 3.0,
+    "spinSpeedMax": 2.5,
+    "boostSpinMultiplier": 5.0,
     "shadowEnabled": true,
-    "shadowOffsetX": 2,
-    "shadowOffsetY": 2,
+    "shadowOffsetX": 8,
+    "shadowOffsetY": 8,
     "shadowAlpha": 0.8
   },
   "peewee": {
