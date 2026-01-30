@@ -33,9 +33,9 @@
     "spinSpeedMax": 1.5,
     "boostSpinMultiplier": 3.0,
     "shadowEnabled": true,
-    "shadowOffsetX": 18,
-    "shadowOffsetY": 18,
-    "shadowAlpha": 0.5
+    "shadowOffsetX": 8,
+    "shadowOffsetY": 12,
+    "shadowAlpha": 0.8
   },
   "peewee": {
     "growthValue": 10,
@@ -54,7 +54,7 @@
     "shadowEnabled": true,
     "shadowOffsetX": 8,
     "shadowOffsetY": 12,
-    "shadowAlpha": 0.6,
+    "shadowAlpha": 0.8,
     "shadowWidthMultiplier": 1.0,
     "targetWidth": 30,
     "spinSpeedMin": 0.8,
