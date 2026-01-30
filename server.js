@@ -395,15 +395,17 @@ function checkCollisions(gameState, C) {
     const marble = allMarbles[i];
     if (!marble.alive) continue;    
     const headRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-          // ✅ SPAWN PROTECTION: Skip collision if either marble just spawned
-      if (m1.spawnProtection || m2.spawnProtection) continue;
+ 
     
     // Check against ALL other marbles
     for (let j = 0; j < allMarbles.length; j++) {
       if (i === j) continue; // Skip self
       
       const other = allMarbles[j];
-      if (!other.alive) continue;
+if (!other.alive) continue;
+      
+      // ✅ SPAWN PROTECTION: Skip collision if either marble just spawned
+      if (marble.spawnProtection || other.spawnProtection) continue;
       
       const otherHeadRadius = calculateMarbleRadius(other.lengthScore, gameConstants);
       
