@@ -30,7 +30,7 @@
     "shooterTargetWidth": 50,
     "spinEnabled": true,
     "spinSpeedMin": 0.5,
-    "spinSpeedMax": 1.5,
+    "spinSpeedMax": 5.5,
     "boostSpinMultiplier": 3.0,
     "shadowEnabled": true,
     "shadowOffsetX": 2,
