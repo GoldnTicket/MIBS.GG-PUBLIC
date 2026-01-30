@@ -490,7 +490,95 @@ function checkCollisions(gameState, C) {
   return Array.from(uniqueDeaths.values());
 }
 
+// ============================================================================
+// WALL COLLISIONS
+// ============================================================================
+function checkWallCollisions() {
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  const wallHits = [];
+  
+  for (const marble of allMarbles) {
+    if (!marble.alive) continue;
+    
+    const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+    let hitWall = false;
+    let hitLocation = null;
+    
+    // Check head
+    const headDist = Math.sqrt(marble.x * marble.x + marble.y * marble.y);
+    if (headDist + leadRadius > gameConstants.arena.radius) {
+      hitWall = true;
+      hitLocation = { x: marble.x, y: marble.y };
+    }
+    
+    // Check body segments
+    if (!hitWall && marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+      const segmentSpacing = 20;
+      const bodyLength = marble.lengthScore * 2;
+      const numSegments = Math.floor(bodyLength / segmentSpacing);
+      
+      for (let i = 1; i <= numSegments; i++) {
+        const sample = marble.pathBuffer.sampleBack(i * segmentSpacing);
+        const segmentRadius = leadRadius * 0.9;
+        const segmentDist = Math.sqrt(sample.x * sample.x + sample.y * sample.y);
+        
+        if (segmentDist + segmentRadius > gameConstants.arena.radius) {
+          hitWall = true;
+          hitLocation = { x: sample.x, y: sample.y };
+          break;
+        }
+      }
+    }
+    
+    if (hitWall) {
+      let creditTo = null;
+      const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+      const goldenMarble = allMarbles.find(m => m.isGolden && m.alive && m.id !== marble.id);
+      
+      if (goldenMarble) {
+        creditTo = goldenMarble.id;
+      } else {
+        const sorted = allMarbles
+          .filter(m => m.alive && m.id !== marble.id)
+          .sort((a, b) => (b.bounty || 0) - (a.bounty || 0));
+        
+        if (sorted.length > 0) creditTo = sorted[0].id;
+      }
+      
+      wallHits.push({ marbleId: marble.id, creditTo, location: hitLocation });
+    }
+  }
+  
+  return wallHits;
+}
 
+// ============================================================================
+// COIN COLLISIONS
+// ============================================================================
+function checkCoinCollisions() {
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  
+  for (let i = gameState.coins.length - 1; i >= 0; i--) {
+    const coin = gameState.coins[i];
+    
+    for (const marble of allMarbles) {
+      const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+      const suctionRadius = marbleRadius + (gameConstants.suction?.extraRadius || 50);
+      const dist = Math.hypot(coin.x - marble.x, coin.y - marble.y);
+      
+      if (dist < suctionRadius) {
+        coin.vx = 0;
+        coin.vy = 0;
+        
+        if (dist < marbleRadius + coin.radius) {
+          marble.lengthScore += coin.growthValue;
+          gameState.coins.splice(i, 1);
+          break;
+        }
+      }
+    }
+  }
+}
 
 // ============================================================================
 // DEATH & DROPS (with Golden Marble from Doc 15)
@@ -957,7 +1045,8 @@ setInterval(() => {
   // ========================================
   // 5. COIN COLLISIONS
   // ========================================
-  checkCoinCollisions();
+checkCoinCollisions();
+
   
   // ========================================
   // 6. SPATIAL GRID UPDATE
