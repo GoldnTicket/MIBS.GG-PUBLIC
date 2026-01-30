@@ -1083,7 +1083,7 @@ setInterval(() => {
   // 7. MARBLE COLLISIONS
   // ========================================
   const killedThisFrame = new Set();
-  const collisionResults = checkCollisions();
+const collisionResults = checkCollisions(gameState, gameConstants);
   const victimToKiller = new Map();
   
   for (const collision of collisionResults) {
