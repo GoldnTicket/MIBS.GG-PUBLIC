@@ -39,7 +39,7 @@
   },
   "peewee": {
     "growthValue": 10,
-    "radius": 15,
+    "radius": 50,
     "mass": 1.0,
     "friction": 0.98,
     "dropValueMultiplier": 2.0,
