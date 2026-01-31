@@ -52,21 +52,7 @@ function updatePeeweePhysics(dt) {
   const spinSpeedMax = gameConstants.peewee?.spinSpeedMax || 2.5;
   
   for (const peewee of gameState.coins) {
-    // ✅ CRITICAL: Skip if in suction (being collected)
-    if (peewee._inSuction) {
-      // Suction handles position, just update rotation
-      const speed = Math.sqrt(peewee.vx * peewee.vx + peewee.vy * peewee.vy);
-      if (!peewee._spinSpeed) {
-        peewee._spinSpeed = (Math.random() * (spinSpeedMax - spinSpeedMin) + spinSpeedMin) * (Math.random() > 0.5 ? 1 : -1);
-      }
-      if (speed > spinVelocityThreshold) {
-        const spinMultiplier = Math.min(speed / 100, 2.0);
-        peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
-      }
-      continue;
-    }
-    
-    // ✅ Apply velocity to position (THIS MAKES IT ROLL!)
+    // ✅ ALWAYS apply velocity to position (THIS MAKES IT ROLL!)
     peewee.x += peewee.vx * dt;
     peewee.y += peewee.vy * dt;
     
@@ -86,7 +72,6 @@ function updatePeeweePhysics(dt) {
     }
     
     if (speed > spinVelocityThreshold) {
-      // Spin proportional to speed
       const spinMultiplier = Math.min(speed / 100, 2.0);
       peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
     }
@@ -112,52 +97,9 @@ function updatePeeweePhysics(dt) {
       peewee.y -= ny * overlap;
     }
     
-    // ✅ MARBLE COLLISION (bounce off player/bot marbles) - ONLY if not in suction
-    const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
-      .filter(m => m.alive);
-    
-    for (const marble of allMarbles) {
-      const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-      const dx = peewee.x - marble.x;
-      const dy = peewee.y - marble.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      
-      // Check if in suction range first
-      const suctionRadius = marbleRadius + (gameConstants.suction?.extraRadius || 50);
-      
-      if (dist < suctionRadius) {
-        // ✅ IN SUCTION - disable bounce, enable pull
-        peewee._inSuction = true;
-        peewee._suctionTarget = marble.id;
-        
-        // Don't bounce - will be handled in checkCoinCollisions
-        continue;
-      }
-      
-      // Only bounce if NOT in suction range
-      if (dist < marbleRadius + peewee.radius && dist > 0) {
-        const nx = dx / dist;
-        const ny = dy / dist;
-        
-        const dot = peewee.vx * nx + peewee.vy * ny;
-        peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
-        peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
-        
-        const overlap = (marbleRadius + peewee.radius) - dist;
-        peewee.x += nx * overlap;
-        peewee.y += ny * overlap;
-      }
-    }
-    
-    // Reset suction flag if no marble nearby
-    if (!peewee._inSuction) {
-      peewee._suctionTarget = null;
-    }
-    
     // ✅ PEEWEE-PEEWEE COLLISION
     for (const other of gameState.coins) {
       if (other === peewee) continue;
-      if (peewee._inSuction || other._inSuction) continue; // Skip if either in suction
       
       const dx = other.x - peewee.x;
       const dy = other.y - peewee.y;
@@ -184,6 +126,10 @@ function updatePeeweePhysics(dt) {
     }
   }
 }
+
+
+
+
 // ============================================================================
 // SPATIAL GRID (from Doc 15)
 // ============================================================================
@@ -797,15 +743,19 @@ function killMarble(marble, killerId) {
   const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
   const segmentSpacing = leadRadius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
   const bodyLength = marble.lengthScore * 2;
-  const numSegments = Math.max(1, Math.floor(bodyLength / segmentSpacing));
+const numSegments = Math.max(1, Math.floor(bodyLength / segmentSpacing));
+  
+  // ✅ Cap total peewees to prevent lag
+  const maxTotalPeewees = 50;
+  const peweesPerSegment = 3;
+  const maxSegments = Math.floor(maxTotalPeewees / peweesPerSegment);
+  const actualSegments = Math.min(numSegments, maxSegments);
   
   const totalValue = marble.bounty || 1;
-  const valuePerDrop = totalValue / Math.max(1, numSegments * 5);
+  const valuePerDrop = totalValue / Math.max(1, actualSegments * peweesPerSegment);
   
-  const peweesPerSegment = 5;
-  
-  for (let segIdx = 0; segIdx < numSegments; segIdx++) {
-    const dist = (segIdx + 1) * segmentSpacing;
+for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
+      const dist = (segIdx + 1) * segmentSpacing;
     const sample = marble.pathBuffer.sampleBack(dist);
     
     for (let p = 0; p < peweesPerSegment; p++) {
