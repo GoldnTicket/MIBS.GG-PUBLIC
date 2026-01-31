@@ -6,9 +6,9 @@
     "spawnMinDistance": 300
   },
   "movement": {
-    "normalSpeed": 250,
+    "normalSpeed": 300,
     "boostMultiplier": 1.8,
-    "boostSpeed": 400,
+    "boostSpeed": 500,
     "turnRateMaxDegPerSec": 200,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
@@ -27,7 +27,7 @@
     "startBountyMax": 8
   },
 "marble": {
-    "shooterTargetWidth": 50,
+    "shooterTargetWidth": 100,
     "spinEnabled": true,
     "spinSpeedMin": 0.5,
     "spinSpeedMax": 2.5,
@@ -50,17 +50,17 @@
     "rollDurationMax": 3000,
     "initialRollSpeedMin": 50,
     "initialRollSpeedMax": 180,
-    "minRollSpeed": 30,
+    "minRollSpeed": 50,
     "collisionEnabled": true,
-    "bounceFactor": 0.8,
+    "bounceFactor": 0.9,
     "shadowEnabled": true,
-    "shadowOffsetX": 4,
-    "shadowOffsetY": 10,
-    "shadowAlpha": 0.5,
+    "shadowOffsetX": 10,
+    "shadowOffsetY": 8,
+    "shadowAlpha": 0.8,
     "shadowWidthMultiplier": 0.8,
-    "spinSpeedMin": 0.8,
+    "spinSpeedMin": 0.0,
     "spinSpeedMax": 2.5,
-    "spinSpeedRollMultiplier": 0.15
+    "spinSpeedRollMultiplier": 2.0
   },
   "collision": {
     "dropValueMultiplier": 2.5,
