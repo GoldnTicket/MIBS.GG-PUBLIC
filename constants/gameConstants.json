@@ -18,7 +18,7 @@
   "player": {
     "startLength": 200,
     "startBounty": 1,
-    "widthVsLengthMult": 1.0
+    "widthVsLengthMult": 5.0
   },
   "bot": {
     "count": 5,
@@ -39,7 +39,7 @@
     "shadowSizeMultiplier": 0.95
   },
 "peewee": {
-    "growthValue": 20,
+    "growthValue": 2,
     "radius": 25,
     "targetWidth": 50,
     "mass": 1.0,
@@ -60,8 +60,8 @@
     "shadowOffsetY": 14,
     "shadowAlpha": 0.9,
     "shadowWidthMultiplier": 0.85,
-    "spinSpeedMin": 0.000,
-    "spinSpeedMax": 0.0,
+    "spinSpeedMin": 0.05,
+    "spinSpeedMax": 0.10,
     "spinSpeedRollMultiplier": 0.0,
     "spinVelocityThreshold": 500
   },
