@@ -792,43 +792,29 @@ function killMarble(marble, killerId) {
   
   marble.alive = false;
   
-  const coinsBeforeDeath = gameState.coins.length; // ✅ ADD THIS
-  
-  const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-
-function killMarble(marble, killerId) {
-  if (!marble.alive) return;
-  
-  marble.alive = false;
-  
   const coinsBeforeDeath = gameState.coins.length;
   
   const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
   const segmentSpacing = leadRadius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
   const bodyLength = marble.lengthScore * 2;
-  const numSegments = Math.floor(bodyLength / segmentSpacing);
+  const numSegments = Math.max(1, Math.floor(bodyLength / segmentSpacing));
   
   const totalValue = marble.bounty || 1;
-  const valuePerDrop = totalValue / Math.max(1, numSegments * 5); // Value per peewee
+  const valuePerDrop = totalValue / Math.max(1, numSegments * 5);
   
-  // ✅ Drop 5 peewees per segment (not 1)
   const peweesPerSegment = 5;
   
   for (let segIdx = 0; segIdx < numSegments; segIdx++) {
     const dist = (segIdx + 1) * segmentSpacing;
     const sample = marble.pathBuffer.sampleBack(dist);
     
-    // Drop 5 peewees from this segment position
     for (let p = 0; p < peweesPerSegment; p++) {
       if (gameState.coins.length >= MAX_COINS) break;
       
-      // Random scatter around segment position
       const scatterAngle = Math.random() * Math.PI * 2;
-      const scatterDist = Math.random() * 30; // Small scatter radius
+      const scatterDist = Math.random() * 30;
       
       const randomAngle = Math.random() * Math.PI * 2;
-      const randomSpeed = 80 + Math.random() * 120;
-      
       const min = gameConstants.peewee?.initialRollSpeedMin || 80;
       const max = gameConstants.peewee?.initialRollSpeedMax || 180;
       const rollSpeed = min + Math.random() * (max - min);
@@ -880,48 +866,8 @@ function killMarble(marble, killerId) {
     }
   }
   
-  // ✅ Debug log AFTER killerName is defined
   console.log(`💀 ${marble.name || marble.id.substring(0,8)} died (${deathType}) - Dropped ${gameState.coins.length - coinsBeforeDeath} peewees`);
   
-  io.emit('playerDeath', {
-    playerId: marble.id,
-    killerId: killerId,
-    killerName: killerName,
-    deathType: deathType,
-    bountyLost: totalValue,
-    x: marble.x,
-    y: marble.y,
-    marbleType: marble.marbleType,
-    timestamp: Date.now()
-  });
-  
-  if (marble.isBot) {
-    const idx = gameState.bots.findIndex(b => b.id === marble.id);
-    if (idx >= 0) {
-      gameState.bots.splice(idx, 1);
-      setTimeout(() => {
-        if (gameState.bots.length < MAX_BOTS) {
-          spawnBot(`bot_${Date.now()}`);
-        }
-      }, 3000);
-    }
-  } else {
-    setImmediate(() => {
-      delete gameState.players[marble.id];
-    });
-  }
-  
-  io.emit('marbleDeath', {
-    marbleId: marble.id,
-    killerId: killerId,
-    position: { x: marble.x, y: marble.y }
-  });
-}
-  
-  // ✅ ADD THIS DEBUG LINE
-  console.log(`💀 ${marble.name || marble.id.substring(0,8)} died - Dropped ${gameState.coins.length - coinsBeforeDeath} peewees`);
-  
-  let killer = null;
   io.emit('playerDeath', {
     playerId: marble.id,
     killerId: killerId,
