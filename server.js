@@ -124,10 +124,72 @@ function updatePeeweePhysics(dt) {
         other.y += ny * (overlap / 2);
       }
     }
-  }
+    }
 }
 
-
+// ✅ MARBLE COLLISION (bounce off player/bot marbles)
+    const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
+      .filter(m => m.alive);
+    
+    for (const marble of allMarbles) {
+      const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+      
+      // Check HEAD collision
+      const dx = peewee.x - marble.x;
+      const dy = peewee.y - marble.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist < marbleRadius + peewee.radius && dist > 0) {
+        // Bounce off head
+        const nx = dx / dist;
+        const ny = dy / dist;
+        
+        const dot = peewee.vx * nx + peewee.vy * ny;
+        peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
+        peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+        
+        // Push out
+        const overlap = (marbleRadius + peewee.radius) - dist;
+        peewee.x += nx * overlap;
+        peewee.y += ny * overlap;
+        
+        continue; // Skip body check if hit head
+      }
+      
+      // Check BODY SEGMENT collisions
+      if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+        const segmentSpacing = 20;
+        const bodyLength = marble.lengthScore * 2;
+        const numSegments = Math.floor(bodyLength / segmentSpacing);
+        
+        for (let segIdx = 1; segIdx <= Math.min(numSegments, 20); segIdx++) {
+          const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
+          
+          const segDx = peewee.x - sample.x;
+          const segDy = peewee.y - sample.y;
+          const segDist = Math.sqrt(segDx * segDx + segDy * segDy);
+          
+          const segmentRadius = marbleRadius * 0.9;
+          
+          if (segDist < segmentRadius + peewee.radius && segDist > 0) {
+            // Bounce off segment
+            const nx = segDx / segDist;
+            const ny = segDy / segDist;
+            
+            const dot = peewee.vx * nx + peewee.vy * ny;
+            peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
+            peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+            
+            // Push out
+            const overlap = (segmentRadius + peewee.radius) - segDist;
+            peewee.x += nx * overlap;
+            peewee.y += ny * overlap;
+            
+            break; // Only bounce once per marble
+          }
+        }
+      }
+    }
 
 
 // ============================================================================
