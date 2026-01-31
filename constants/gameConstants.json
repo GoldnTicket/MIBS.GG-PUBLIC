@@ -26,16 +26,17 @@
     "startBounty": 2,
     "startBountyMax": 8
   },
-  "marble": {
+"marble": {
     "shooterTargetWidth": 50,
     "spinEnabled": true,
     "spinSpeedMin": 0.5,
     "spinSpeedMax": 2.5,
     "boostSpinMultiplier": 5.0,
     "shadowEnabled": true,
-    "shadowOffsetX": 18,
-    "shadowOffsetY": 12,
-    "shadowAlpha": 0.9
+    "shadowOffsetX": 4,
+    "shadowOffsetY": 4,
+    "shadowAlpha": 0.5,
+    "shadowSizeMultiplier": 0.95
   },
  "peewee": {
     "growthValue": 20,
