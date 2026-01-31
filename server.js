@@ -381,11 +381,6 @@ function updateBotAI(bot, delta) {
   }
 }
 
-// ============================================================================
-// COLLISION DETECTION - GUARANTEED HEAD-to-BODY WORKING
-// REPLACE ENTIRE checkCollisions() function in server.js
-// ============================================================================
-
 function checkCollisions(gameState, C) {
   const results = [];
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
@@ -394,20 +389,19 @@ function checkCollisions(gameState, C) {
   for (let i = 0; i < allMarbles.length; i++) {
     const marble = allMarbles[i];
     if (!marble.alive) continue;    
-    const headRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
- 
+    const headRadius = calculateMarbleRadius(marble.lengthScore, C);
     
     // Check against ALL other marbles
     for (let j = 0; j < allMarbles.length; j++) {
       if (i === j) continue; // Skip self
       
       const other = allMarbles[j];
-if (!other.alive) continue;
+      if (!other.alive) continue;
       
       // ✅ SPAWN PROTECTION: Skip collision if either marble just spawned
       if (marble.spawnProtection || other.spawnProtection) continue;
       
-      const otherHeadRadius = calculateMarbleRadius(other.lengthScore, gameConstants);
+      const otherHeadRadius = calculateMarbleRadius(other.lengthScore, C);
       
       // ✅ CHECK 1: HEAD-to-HEAD collision
       const dx = other.x - marble.x;
@@ -428,31 +422,41 @@ if (!other.alive) continue;
         // SMALLER angle = more aggressive = DIES
         if (relativeAngleMarble < relativeAngleOther) {
           results.push({ killerId: other.id, victimId: marble.id });
+          
+          // ✅ EMIT COLLISION EVENT
+          io.emit('collision', {
+            x: collisionX,
+            y: collisionY,
+            timestamp: Date.now()
+          });
         } else if (relativeAngleOther < relativeAngleMarble) {
           results.push({ killerId: marble.id, victimId: other.id });
+          
+          io.emit('collision', {
+            x: collisionX,
+            y: collisionY,
+            timestamp: Date.now()
+          });
         } else {
           // Equal - both die
           results.push({ killerId: null, victimId: marble.id });
           results.push({ killerId: null, victimId: other.id });
+          
+          io.emit('collision', {
+            x: collisionX,
+            y: collisionY,
+            timestamp: Date.now()
+          });
         }
         continue; // Skip body check if head-to-head happened
       }
       
-// ✅ EMIT COLLISION EVENT FOR VISUAL EFFECTS
-io.emit('collision', {
-  x: (marble.x + other.x) / 2,
-  y: (marble.y + other.y) / 2,
-  timestamp: Date.now()
-});
-
-
-      // ✅ CHECK 2: HEAD-to-BODY collision (check ALL body segments)
+      // ✅ CHECK 2: HEAD-to-BODY collision
       if (other.pathBuffer && other.pathBuffer.samples.length > 1) {
         const segmentSpacing = 20;
         const bodyLength = other.lengthScore * 2;
         const numSegments = Math.floor(bodyLength / segmentSpacing);
         
-        // Check marble's HEAD against other's BODY segments
         for (let segIdx = 1; segIdx <= numSegments; segIdx++) {
           const sample = other.pathBuffer.sampleBack(segIdx * segmentSpacing);
           
@@ -460,22 +464,28 @@ io.emit('collision', {
           const segDy = sample.y - marble.y;
           const segDist = Math.sqrt(segDx * segDx + segDy * segDy);
           
-          const segmentRadius = otherHeadRadius * 0.9; // Body segments slightly smaller
+          const segmentRadius = otherHeadRadius * 0.9;
           
-          // If marble's HEAD hits other's BODY
           if (segDist < (headRadius + segmentRadius) * 0.85) {
             results.push({ 
-              killerId: other.id,  // Body owner wins
-              victimId: marble.id  // Head that hit dies
+              killerId: other.id,
+              victimId: marble.id
             });
-            break; // Stop checking more segments once collision found
+            
+            // ✅ EMIT COLLISION EVENT
+            io.emit('collision', {
+              x: sample.x,
+              y: sample.y,
+              timestamp: Date.now()
+            });
+            break;
           }
         }
       }
     }
   }
   
-  // Remove duplicate death results
+  // Remove duplicates
   const uniqueDeaths = new Map();
   for (const result of results) {
     const key = result.victimId;
