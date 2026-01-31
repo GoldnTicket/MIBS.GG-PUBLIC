@@ -3,7 +3,7 @@
   "arena": {
     "radius": 3000,
     "diameter": 6000,
-    "spawnMinDistance": 300
+    "spawnMinDistance": 500
   },
   "movement": {
     "normalSpeed": 300,
@@ -108,7 +108,7 @@
     "speedMultiplier": 1.10
   },
   "zoom": {
-    "max": 1.5,
+    "max": 1.2,
     "min": 0.505,
     "scoreAtMin": 5000,
     "lerpPer60": 0.25,
@@ -118,7 +118,7 @@
     "spritesEnabled": true,
     "sizeScale": 0.5,
     "scaleMultiplier": 0.5,
-    "offsetBasePx": 15,
+    "offsetBasePx": 20,
     "offsetScaleMultiplier": 1.2,
     "transitionDuration": 150
   },
