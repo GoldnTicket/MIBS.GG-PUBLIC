@@ -37,9 +37,10 @@
     "shadowOffsetY": 12,
     "shadowAlpha": 0.9
   },
-  "peewee": {
+ "peewee": {
     "growthValue": 20,
-    "radius": 80,
+    "radius": 25,
+    "targetWidth": 50,
     "mass": 2.0,
     "friction": 0.88,
     "dropValueMultiplier": 2.0,
@@ -52,11 +53,10 @@
     "collisionEnabled": true,
     "bounceFactor": 0.8,
     "shadowEnabled": true,
-    "shadowOffsetX": 18,
-    "shadowOffsetY": 12,
-    "shadowAlpha": 0.8,
-    "shadowWidthMultiplier": 1.2,
-    "targetWidth": 30,
+    "shadowOffsetX": 4,
+    "shadowOffsetY": 10,
+    "shadowAlpha": 0.5,
+    "shadowWidthMultiplier": 0.8,
     "spinSpeedMin": 0.8,
     "spinSpeedMax": 2.5,
     "spinSpeedRollMultiplier": 0.15
