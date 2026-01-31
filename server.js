@@ -21,7 +21,7 @@ const gameConstants = require('./constants/gameConstants.json');
 const PORT = process.env.PORT || 3001;
 const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const MAX_BOTS = gameConstants.bot?.count ?? 0;
-const MAX_COINS = 200;
+const MAX_COINS = 500;
 const PLAYER_TIMEOUT = 15000;
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
@@ -63,6 +63,10 @@ function updatePeeweePhysics(dt) {
   const spinVelocityThreshold = gameConstants.peewee?.spinVelocityThreshold || 15;
   const spinSpeedMin = gameConstants.peewee?.spinSpeedMin || 0.5;
   const spinSpeedMax = gameConstants.peewee?.spinSpeedMax || 2.5;
+  
+  // ✅ Get all marbles ONCE before loop
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
+    .filter(m => m.alive);
   
   for (const peewee of gameState.coins) {
     // ✅ ALWAYS apply velocity to position (THIS MAKES IT ROLL!)
@@ -137,13 +141,8 @@ function updatePeeweePhysics(dt) {
         other.y += ny * (overlap / 2);
       }
     }
-    }
-}
-
-// ✅ MARBLE COLLISION (bounce off player/bot marbles)
-    const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
-      .filter(m => m.alive);
     
+    // ✅ MARBLE COLLISION (bounce off player/bot marbles)
     for (const marble of allMarbles) {
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
       
@@ -203,7 +202,8 @@ function updatePeeweePhysics(dt) {
         }
       }
     }
-
+  }
+}
 
 // ============================================================================
 // SPATIAL GRID (from Doc 15)
@@ -812,8 +812,8 @@ function killMarble(marble, killerId) {
   
   console.log(`💎 DROP: length=${marble.lengthScore}, segments=${numSegments}, pathBuffer=${marble.pathBuffer?.samples?.length || 0}`);
   
-  const maxTotalPeewees = 50;
-  const peweesPerSegment = 3;
+  const maxTotalPeewees = 250;
+  const peweesPerSegment = 5;
   const maxSegments = Math.floor(maxTotalPeewees / peweesPerSegment);
   const actualSegments = Math.min(numSegments, maxSegments);
   
@@ -1236,10 +1236,10 @@ const collisionResults = checkCollisions(gameState, gameConstants);
   // ========================================
   // 9. PERIODIC UPDATES
   // ========================================
-  if (tickCounter % 60 === 0) {
+ if (tickCounter % 60 === 0) {
     updateGoldenMarble();
     const coinsToSpawn = MAX_COINS - gameState.coins.length;
-    for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) spawnCoin();
+    for(let i = 0; i < Math.min(coinsToSpawn, 30); i++) spawnCoin();
   }
   
   // ========================================
