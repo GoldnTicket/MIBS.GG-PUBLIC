@@ -594,9 +594,8 @@ function checkCoinCollisions() {
 // HELPER FUNCTIONS (after io initialization)
 // ============================================================================
 
-
 // ============================================================================
-// COLLISSIONS
+//Collisions
 // ============================================================================
 
 function killMarble(marble, killerId) {
@@ -699,52 +698,6 @@ function killMarble(marble, killerId) {
     killerId: killerId,
     position: { x: marble.x, y: marble.y }
   });
-}
-  
-// ✅ BROADCAST death event to ALL clients (for explosions)
-  io.emit('playerDeath', {
-    playerId: marble.id,
-    killerId: killerId,
-    killerName: killerName,
-    deathType: deathType,
-    bountyLost: dropInfo.bountyValue,
-    x: marble.x,
-    y: marble.y,
-    marbleType: marble.marbleType,
-    timestamp: Date.now()
-  });
-  
-  if (marble.isBot) {
-    const idx = gameState.bots.findIndex(b => b.id === marble.id);
-    if (idx >= 0) {
-      gameState.bots.splice(idx, 1);
-      setTimeout(() => {
-        if (gameState.bots.length < MAX_BOTS) {
-          spawnBot(`bot_${Date.now()}`);
-        }
-      }, 3000);
-    }
-  } else 
-  
-  io.emit('marbleDeath', {
-    marbleId: marble.id,
-    killerId: killerId,
-    position: { x: marble.x, y: marble.y }
-  });
-
-
-function updateGoldenMarble() {
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
-  
-  allMarbles.forEach(m => m.isGolden = false);
-  
-  if (allMarbles.length > 0) {
-    const highest = allMarbles.reduce((prev, current) => {
-      return (current.bounty || 0) > (prev.bounty || 0) ? current : prev;
-    });
-    
-    if (highest.bounty > 0) highest.isGolden = true;
-  }
 }
 
 // ============================================================================
