@@ -6,10 +6,10 @@
     "spawnMinDistance": 300
   },
   "movement": {
-    "normalSpeed": 200,
+    "normalSpeed": 250,
     "boostMultiplier": 1.8,
-    "boostSpeed": 360,
-    "turnRateMaxDegPerSec": 180,
+    "boostSpeed": 400,
+    "turnRateMaxDegPerSec": 200,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
     "minTurnMultiplier": 0.3,
@@ -33,40 +33,40 @@
     "spinSpeedMax": 2.5,
     "boostSpinMultiplier": 5.0,
     "shadowEnabled": true,
-    "shadowOffsetX": 8,
-    "shadowOffsetY": 8,
-    "shadowAlpha": 0.8
+    "shadowOffsetX": 18,
+    "shadowOffsetY": 12,
+    "shadowAlpha": 0.9
   },
   "peewee": {
     "growthValue": 20,
-    "radius": 50,
+    "radius": 80,
     "mass": 2.0,
-    "friction": 0.98,
+    "friction": 0.88,
     "dropValueMultiplier": 2.0,
     "rollEnabled": true,
     "rollDurationMin": 1000,
     "rollDurationMax": 3000,
-    "initialRollSpeedMin": 80,
+    "initialRollSpeedMin": 50,
     "initialRollSpeedMax": 180,
-    "minRollSpeed": 15,
+    "minRollSpeed": 30,
     "collisionEnabled": true,
-    "bounceFactor": 0.7,
+    "bounceFactor": 0.8,
     "shadowEnabled": true,
     "shadowOffsetX": 18,
     "shadowOffsetY": 12,
     "shadowAlpha": 0.8,
-    "shadowWidthMultiplier": 1.0,
+    "shadowWidthMultiplier": 1.2,
     "targetWidth": 30,
     "spinSpeedMin": 0.8,
     "spinSpeedMax": 2.5,
-    "spinSpeedRollMultiplier": 0.015
+    "spinSpeedRollMultiplier": 0.15
   },
   "collision": {
     "dropValueMultiplier": 2.5,
     "gridSizePx": 64
   },
   "suction": {
-    "extraRadius": 50
+    "extraRadius": 30
   },
   "dust": {
     "enabled": true,
@@ -77,7 +77,7 @@
     "alphaEnd": 0,
     "scaleStart": 1.2,
     "scaleEnd": 0.1,
-    "gravity": 60
+    "gravity": 40
   },
   "boost": {
     "shrinkagePerSecond": 6,
@@ -85,16 +85,16 @@
   },
   "death": {
     "explosionEnabled": true,
-    "explosionParticles": 400,
+    "explosionParticles": 800,
     "explosionSpeedMin": 180,
     "explosionSpeedMax": 400,
-    "explosionLifetimeMin": 600,
-    "explosionLifetimeMax": 1400,
-    "explosionScaleStart": 0.4,
-    "explosionScaleEnd": 0.05,
+    "explosionLifetimeMin": 1600,
+    "explosionLifetimeMax": 2400,
+    "explosionScaleStart": 0.2,
+    "explosionScaleEnd": 0.75,
     "cameraShake": true,
-    "cameraShakeDuration": 400,
-    "cameraShakeIntensity": 0.015,
+    "cameraShakeDuration": 500,
+    "cameraShakeIntensity": 0.025,
     "fadeEnabled": true,
     "fadeDelay": 200,
     "fadeDuration": 400,
@@ -120,7 +120,7 @@
   },
   "spline": {
     "pathStepPx": 1,
-    "segmentSpacingMultiplier": 1.2
+    "segmentSpacingMultiplier": 1.1
   },
   "depths": {
     "background": -2000,
