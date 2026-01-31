@@ -52,15 +52,29 @@ function updatePeeweePhysics(dt) {
   const spinSpeedMax = gameConstants.peewee?.spinSpeedMax || 2.5;
   
   for (const peewee of gameState.coins) {
-    // Apply velocity
+    // ✅ CRITICAL: Skip if in suction (being collected)
+    if (peewee._inSuction) {
+      // Suction handles position, just update rotation
+      const speed = Math.sqrt(peewee.vx * peewee.vx + peewee.vy * peewee.vy);
+      if (!peewee._spinSpeed) {
+        peewee._spinSpeed = (Math.random() * (spinSpeedMax - spinSpeedMin) + spinSpeedMin) * (Math.random() > 0.5 ? 1 : -1);
+      }
+      if (speed > spinVelocityThreshold) {
+        const spinMultiplier = Math.min(speed / 100, 2.0);
+        peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
+      }
+      continue;
+    }
+    
+    // ✅ Apply velocity to position (THIS MAKES IT ROLL!)
     peewee.x += peewee.vx * dt;
     peewee.y += peewee.vy * dt;
     
-    // Apply friction
+    // ✅ Apply friction
     peewee.vx *= friction;
     peewee.vy *= friction;
     
-    // Apply gravity
+    // ✅ Apply gravity
     peewee.vy += gravity * dt;
     
     // Calculate velocity magnitude
@@ -76,7 +90,6 @@ function updatePeeweePhysics(dt) {
       const spinMultiplier = Math.min(speed / 100, 2.0);
       peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
     }
-    // If speed below threshold, rotation stays frozen
     
     // Stop if moving very slowly
     if (speed < 5) {
@@ -87,22 +100,19 @@ function updatePeeweePhysics(dt) {
     // ✅ WALL COLLISION
     const distFromCenter = Math.sqrt(peewee.x * peewee.x + peewee.y * peewee.y);
     if (distFromCenter + peewee.radius > gameConstants.arena.radius) {
-      // Calculate normal vector (pointing inward)
       const nx = -peewee.x / distFromCenter;
       const ny = -peewee.y / distFromCenter;
       
-      // Reflect velocity
       const dot = peewee.vx * nx + peewee.vy * ny;
       peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
       peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
       
-      // Push back inside arena
       const overlap = (distFromCenter + peewee.radius) - gameConstants.arena.radius;
       peewee.x -= nx * overlap;
       peewee.y -= ny * overlap;
     }
     
-    // ✅ MARBLE COLLISION (bounce off player/bot marbles)
+    // ✅ MARBLE COLLISION (bounce off player/bot marbles) - ONLY if not in suction
     const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
       .filter(m => m.alive);
     
@@ -112,26 +122,42 @@ function updatePeeweePhysics(dt) {
       const dy = peewee.y - marble.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
+      // Check if in suction range first
+      const suctionRadius = marbleRadius + (gameConstants.suction?.extraRadius || 50);
+      
+      if (dist < suctionRadius) {
+        // ✅ IN SUCTION - disable bounce, enable pull
+        peewee._inSuction = true;
+        peewee._suctionTarget = marble.id;
+        
+        // Don't bounce - will be handled in checkCoinCollisions
+        continue;
+      }
+      
+      // Only bounce if NOT in suction range
       if (dist < marbleRadius + peewee.radius && dist > 0) {
-        // Calculate normal
         const nx = dx / dist;
         const ny = dy / dist;
         
-        // Reflect velocity
         const dot = peewee.vx * nx + peewee.vy * ny;
         peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
         peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
         
-        // Push away from marble
         const overlap = (marbleRadius + peewee.radius) - dist;
         peewee.x += nx * overlap;
         peewee.y += ny * overlap;
       }
     }
     
-    // ✅ PEEWEE-PEEWEE COLLISION (with higher energy retention)
+    // Reset suction flag if no marble nearby
+    if (!peewee._inSuction) {
+      peewee._suctionTarget = null;
+    }
+    
+    // ✅ PEEWEE-PEEWEE COLLISION
     for (const other of gameState.coins) {
       if (other === peewee) continue;
+      if (peewee._inSuction || other._inSuction) continue; // Skip if either in suction
       
       const dx = other.x - peewee.x;
       const dy = other.y - peewee.y;
@@ -139,11 +165,9 @@ function updatePeeweePhysics(dt) {
       const minDist = peewee.radius + other.radius;
       
       if (dist < minDist && dist > 0) {
-        // Calculate normal
         const nx = dx / dist;
         const ny = dy / dist;
         
-        // Exchange velocities (simplified elastic collision)
         const tempVx = peewee.vx;
         const tempVy = peewee.vy;
         peewee.vx = other.vx * peeweeBounceMultiplier;
@@ -151,7 +175,6 @@ function updatePeeweePhysics(dt) {
         other.vx = tempVx * peeweeBounceMultiplier;
         other.vy = tempVy * peeweeBounceMultiplier;
         
-        // Separate peewees
         const overlap = minDist - dist;
         peewee.x -= nx * (overlap / 2);
         peewee.y -= ny * (overlap / 2);
@@ -161,7 +184,6 @@ function updatePeeweePhysics(dt) {
     }
   }
 }
-
 // ============================================================================
 // SPATIAL GRID (from Doc 15)
 // ============================================================================
@@ -591,14 +613,40 @@ function checkCoinCollisions() {
       const suctionRadius = marbleRadius + (gameConstants.suction?.extraRadius || 50);
       const dist = Math.hypot(coin.x - marble.x, coin.y - marble.y);
       
-      if (dist < suctionRadius) {
-        coin.vx = 0;
-        coin.vy = 0;
+      // ✅ COLLECTION: If touching marble head
+      if (dist < marbleRadius + coin.radius) {
+        marble.lengthScore += coin.growthValue;
+        gameState.coins.splice(i, 1);
+        break;
+      }
+      
+      // ✅ SUCTION: Pull toward marble (Slither.io style)
+      if (dist < suctionRadius && dist > marbleRadius + coin.radius) {
+        coin._inSuction = true;
+        coin._suctionTarget = marble.id;
         
-        if (dist < marbleRadius + coin.radius) {
-          marble.lengthScore += coin.growthValue;
-          gameState.coins.splice(i, 1);
-          break;
+        // ✅ Accelerating pull - gets STRONGER near head
+        const distanceRatio = dist / suctionRadius; // 1.0 at edge, 0.0 at head
+        const pullStrength = Math.pow(1 - distanceRatio, 2) * 0.4; // Quadratic acceleration
+        
+        // Calculate direction to marble
+        const dx = marble.x - coin.x;
+        const dy = marble.y - coin.y;
+        
+        // ✅ Smooth pull with acceleration
+        coin.x += dx * pullStrength;
+        coin.y += dy * pullStrength;
+        
+        // Update velocity to match pull direction (for spin calculation)
+        coin.vx = dx * pullStrength * 60; // Convert to velocity
+        coin.vy = dy * pullStrength * 60;
+        
+        break; // Only one marble can suction this coin
+      } else {
+        // Reset suction flag if out of range
+        if (coin._suctionTarget === marble.id) {
+          coin._inSuction = false;
+          coin._suctionTarget = null;
         }
       }
     }
@@ -744,6 +792,15 @@ function killMarble(marble, killerId) {
   
   marble.alive = false;
   
+  const coinsBeforeDeath = gameState.coins.length; // ✅ ADD THIS
+  
+  const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+
+function killMarble(marble, killerId) {
+  if (!marble.alive) return;
+  
+  marble.alive = false;
+  
   const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
   const segmentSpacing = leadRadius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
   const bodyLength = marble.lengthScore * 2;
@@ -817,6 +874,12 @@ function killMarble(marble, killerId) {
     }
   }
   
+  }
+  
+  // ✅ ADD THIS DEBUG LINE
+  console.log(`💀 ${marble.name || marble.id.substring(0,8)} died - Dropped ${gameState.coins.length - coinsBeforeDeath} peewees`);
+  
+  let killer = null;
   io.emit('playerDeath', {
     playerId: marble.id,
     killerId: killerId,
