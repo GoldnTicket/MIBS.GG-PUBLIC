@@ -737,15 +737,15 @@ function killMarble(marble, killerId) {
   if (!marble.alive) return;
   
   marble.alive = false;
-  
   const coinsBeforeDeath = gameState.coins.length;
   
   const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
   const segmentSpacing = leadRadius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
   const bodyLength = marble.lengthScore * 2;
-const numSegments = Math.max(1, Math.floor(bodyLength / segmentSpacing));
+  const numSegments = Math.max(1, Math.floor(bodyLength / segmentSpacing));
   
-  // ✅ Cap total peewees to prevent lag
+  console.log(`💎 DROP: length=${marble.lengthScore}, segments=${numSegments}, pathBuffer=${marble.pathBuffer?.samples?.length || 0}`);
+  
   const maxTotalPeewees = 50;
   const peweesPerSegment = 3;
   const maxSegments = Math.floor(maxTotalPeewees / peweesPerSegment);
@@ -754,8 +754,8 @@ const numSegments = Math.max(1, Math.floor(bodyLength / segmentSpacing));
   const totalValue = marble.bounty || 1;
   const valuePerDrop = totalValue / Math.max(1, actualSegments * peweesPerSegment);
   
-for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
-      const dist = (segIdx + 1) * segmentSpacing;
+  for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
+    const dist = (segIdx + 1) * segmentSpacing;
     const sample = marble.pathBuffer.sampleBack(dist);
     
     for (let p = 0; p < peweesPerSegment; p++) {
@@ -763,10 +763,9 @@ for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
       
       const scatterAngle = Math.random() * Math.PI * 2;
       const scatterDist = Math.random() * 30;
-      
       const randomAngle = Math.random() * Math.PI * 2;
-      const min = gameConstants.peewee?.initialRollSpeedMin || 80;
-      const max = gameConstants.peewee?.initialRollSpeedMax || 180;
+      const min = gameConstants.peewee?.initialRollSpeedMin || 300;
+      const max = gameConstants.peewee?.initialRollSpeedMax || 500;
       const rollSpeed = min + Math.random() * (max - min);
       
       gameState.coins.push({
@@ -778,11 +777,9 @@ for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
         growthValue: Math.floor(valuePerDrop) || 1,
         radius: gameConstants.peewee?.radius || 50,
         mass: gameConstants.peewee?.mass || 2.0,
-        friction: gameConstants.peewee?.friction || 0.92,
+        friction: gameConstants.peewee?.friction || 0.999,
         marbleType: marble.marbleType || 'GALAXY1',
-        rotation: 0,
-        _inSuction: false,
-        _suctionTarget: null
+        rotation: 0
       });
     }
   }
@@ -835,15 +832,11 @@ for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
     if (idx >= 0) {
       gameState.bots.splice(idx, 1);
       setTimeout(() => {
-        if (gameState.bots.length < MAX_BOTS) {
-          spawnBot(`bot_${Date.now()}`);
-        }
+        if (gameState.bots.length < MAX_BOTS) spawnBot(`bot_${Date.now()}`);
       }, 3000);
     }
   } else {
-    setImmediate(() => {
-      delete gameState.players[marble.id];
-    });
+    setImmediate(() => delete gameState.players[marble.id]);
   }
   
   io.emit('marbleDeath', {
