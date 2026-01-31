@@ -65,7 +65,6 @@
     "spinSpeedRollMultiplier": 2.0,
     "spinVelocityThreshold": 10
   },
-  },
   "collision": {
     "dropValueMultiplier": 2.5,
     "gridSizePx": 64
