@@ -21,7 +21,7 @@
     "widthVsLengthMult": 1.0
   },
   "bot": {
-    "count": 10,
+    "count": 5,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
@@ -56,10 +56,10 @@
     "peeweeBounceMultiplier": 0.90,
     "gravity": 15,
     "shadowEnabled": true,
-    "shadowOffsetX": 14,
-    "shadowOffsetY": 6,
+    "shadowOffsetX": 4,
+    "shadowOffsetY": 16,
     "shadowAlpha": 0.9,
-    "shadowWidthMultiplier": 0.9,
+    "shadowWidthMultiplier": 0.5,
     "spinSpeedMin": 0.5,
     "spinSpeedMax": 3.5,
     "spinSpeedRollMultiplier": 2.0,
