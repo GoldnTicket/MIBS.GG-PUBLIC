@@ -60,8 +60,8 @@
     "shadowOffsetY": 14,
     "shadowAlpha": 0.9,
     "shadowWidthMultiplier": 0.7,
-    "spinSpeedMin": 0.2,
-    "spinSpeedMax": 3.5,
+    "spinSpeedMin": 0.02,
+    "spinSpeedMax": 0.5,
     "spinSpeedRollMultiplier": 1.0,
     "spinVelocityThreshold": 5
   },
