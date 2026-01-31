@@ -414,7 +414,7 @@ if (!other.alive) continue;
       const dy = other.y - marble.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      if (dist < (headRadius + otherHeadRadius) * 0.85) {
+      if (dist < (headRadius + otherHeadRadius) * 0.75) {
         // HEAD-to-HEAD: Use angle comparison
         const collisionX = (marble.x + other.x) / 2;
         const collisionY = (marble.y + other.y) / 2;
@@ -455,7 +455,7 @@ if (!other.alive) continue;
           const segmentRadius = otherHeadRadius * 0.9; // Body segments slightly smaller
           
           // If marble's HEAD hits other's BODY
-          if (segDist < (headRadius + segmentRadius) * 0.85) {
+          if (segDist < (headRadius + segmentRadius) * 0.75) {
             results.push({ 
               killerId: other.id,  // Body owner wins
               victimId: marble.id  // Head that hit dies
