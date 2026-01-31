@@ -598,107 +598,7 @@ function checkCoinCollisions() {
 //Collisions
 // ============================================================================
 
-function killMarble(marble, killerId) {
-  if (!marble.alive) return;
-  
-  marble.alive = false;
-  
-  const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-  const segmentSpacing = leadRadius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
-  const bodyLength = marble.lengthScore * 2;
-  const numSegments = Math.floor(bodyLength / segmentSpacing);
-  const numDrops = numSegments;
-  
-  const totalValue = marble.bounty || 1;
-  const valuePerDrop = totalValue / Math.max(1, numDrops);
-  
-  const coinsToSpawn = Math.min(numDrops, MAX_COINS - gameState.coins.length);
-  
-  for (let i = 0; i < coinsToSpawn; i++) {
-    const dist = (i + 1) * segmentSpacing;
-    const sample = marble.pathBuffer.sampleBack(dist);
-    
-    const randomAngle = Math.random() * Math.PI * 2;
-    const randomSpeed = 80 + Math.random() * 100;
-    
-    gameState.coins.push({
-      id: `coin_${Date.now()}_${Math.random()}_${i}`,
-      x: sample.x || marble.x,
-      y: sample.y || marble.y,
-      vx: Math.cos(randomAngle) * randomSpeed,
-      vy: Math.sin(randomAngle) * randomSpeed,
-      growthValue: Math.floor(valuePerDrop * 10) || 1,
-      radius: gameConstants.peewee?.radius || 15,
-      mass: gameConstants.peewee?.mass || 1.0,
-      friction: gameConstants.peewee?.friction || 0.98,
-      marbleType: marble.marbleType || 'GALAXY1',
-      sizeMultiplier: 1.0
-    });
-  }
-  
-  let killer = null;
-  let killerName = 'The Arena';
-  let deathType = 'wall';
-  
-  if (killerId) {
-    killer = gameState.players[killerId];
-    if (!killer) killer = gameState.bots.find(b => b.id === killerId);
-    
-    if (killer) {
-      killerName = killer.name || 'Unknown';
-      deathType = 'player';
-      
-      if (killer.alive) {
-        killer.bounty = (killer.bounty || 0) + totalValue;
-        killer.kills = (killer.kills || 0) + 1;
-        killer.lengthScore += 20;
-        
-        if (!killer.isBot) {
-          io.to(killer.id).emit('playerKill', {
-            killerId: killer.id,
-            victimId: marble.id,
-            victimName: marble.name || 'Player',
-            bountyGained: totalValue
-          });
-        }
-      }
-    }
-  }
-  
-  io.emit('playerDeath', {
-    playerId: marble.id,
-    killerId: killerId,
-    killerName: killerName,
-    deathType: deathType,
-    bountyLost: totalValue,
-    x: marble.x,
-    y: marble.y,
-    marbleType: marble.marbleType,
-    timestamp: Date.now()
-  });
-  
-  if (marble.isBot) {
-    const idx = gameState.bots.findIndex(b => b.id === marble.id);
-    if (idx >= 0) {
-      gameState.bots.splice(idx, 1);
-      setTimeout(() => {
-        if (gameState.bots.length < MAX_BOTS) {
-          spawnBot(`bot_${Date.now()}`);
-        }
-      }, 3000);
-    }
-  } else {
-    setImmediate(() => {
-      delete gameState.players[marble.id];
-    });
-  }
-  
-  io.emit('marbleDeath', {
-    marbleId: marble.id,
-    killerId: killerId,
-    position: { x: marble.x, y: marble.y }
-  });
-}
+
 
 // ============================================================================
 // SPAWNING
@@ -805,6 +705,128 @@ app.get('/health', (req, res) => {
     uptime: process.uptime()
   });
 });
+
+
+
+// ============================================================================
+// FUNCTIONS THAT USE io (must be after io initialization)
+// ============================================================================
+
+function updateGoldenMarble() {
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  
+  allMarbles.forEach(m => m.isGolden = false);
+  
+  if (allMarbles.length > 0) {
+    const highest = allMarbles.reduce((prev, current) => {
+      return (current.bounty || 0) > (prev.bounty || 0) ? current : prev;
+    });
+    
+    if (highest.bounty > 0) highest.isGolden = true;
+  }
+}
+
+function killMarble(marble, killerId) {
+  if (!marble.alive) return;
+  
+  marble.alive = false;
+  
+  const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+  const segmentSpacing = leadRadius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
+  const bodyLength = marble.lengthScore * 2;
+  const numSegments = Math.floor(bodyLength / segmentSpacing);
+  const numDrops = numSegments;
+  
+  const totalValue = marble.bounty || 1;
+  const valuePerDrop = totalValue / Math.max(1, numDrops);
+  
+  const coinsToSpawn = Math.min(numDrops, MAX_COINS - gameState.coins.length);
+  
+  for (let i = 0; i < coinsToSpawn; i++) {
+    const dist = (i + 1) * segmentSpacing;
+    const sample = marble.pathBuffer.sampleBack(dist);
+    
+    const randomAngle = Math.random() * Math.PI * 2;
+    const randomSpeed = 80 + Math.random() * 100;
+    
+    gameState.coins.push({
+      id: `coin_${Date.now()}_${Math.random()}_${i}`,
+      x: sample.x || marble.x,
+      y: sample.y || marble.y,
+      vx: Math.cos(randomAngle) * randomSpeed,
+      vy: Math.sin(randomAngle) * randomSpeed,
+      growthValue: Math.floor(valuePerDrop * 10) || 1,
+      radius: gameConstants.peewee?.radius || 15,
+      mass: gameConstants.peewee?.mass || 1.0,
+      friction: gameConstants.peewee?.friction || 0.98,
+      marbleType: marble.marbleType || 'GALAXY1',
+      sizeMultiplier: 1.0
+    });
+  }
+  
+  let killer = null;
+  let killerName = 'The Arena';
+  let deathType = 'wall';
+  
+  if (killerId) {
+    killer = gameState.players[killerId];
+    if (!killer) killer = gameState.bots.find(b => b.id === killerId);
+    
+    if (killer) {
+      killerName = killer.name || 'Unknown';
+      deathType = 'player';
+      
+      if (killer.alive) {
+        killer.bounty = (killer.bounty || 0) + totalValue;
+        killer.kills = (killer.kills || 0) + 1;
+        killer.lengthScore += 20;
+        
+        if (!killer.isBot) {
+          io.to(killer.id).emit('playerKill', {
+            killerId: killer.id,
+            victimId: marble.id,
+            victimName: marble.name || 'Player',
+            bountyGained: totalValue
+          });
+        }
+      }
+    }
+  }
+  
+  io.emit('playerDeath', {
+    playerId: marble.id,
+    killerId: killerId,
+    killerName: killerName,
+    deathType: deathType,
+    bountyLost: totalValue,
+    x: marble.x,
+    y: marble.y,
+    marbleType: marble.marbleType,
+    timestamp: Date.now()
+  });
+  
+  if (marble.isBot) {
+    const idx = gameState.bots.findIndex(b => b.id === marble.id);
+    if (idx >= 0) {
+      gameState.bots.splice(idx, 1);
+      setTimeout(() => {
+        if (gameState.bots.length < MAX_BOTS) {
+          spawnBot(`bot_${Date.now()}`);
+        }
+      }, 3000);
+    }
+  } else {
+    setImmediate(() => {
+      delete gameState.players[marble.id];
+    });
+  }
+  
+  io.emit('marbleDeath', {
+    marbleId: marble.id,
+    killerId: killerId,
+    position: { x: marble.x, y: marble.y }
+  });
+}
 
 // ============================================================================
 // SOCKET.IO HANDLERS (with reconciliation from Doc 14)
