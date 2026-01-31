@@ -43,7 +43,7 @@
     "radius": 50,
     "targetWidth": 100,
     "mass": 1.0,
-    "friction": 0.98,
+    "friction": 0.99,
     "dropValueMultiplier": 2.0,
     "rollEnabled": true,
     "rollDurationMin": 500,
@@ -62,7 +62,7 @@
     "shadowWidthMultiplier": 0.7,
     "spinSpeedMin": 0.02,
     "spinSpeedMax": 0.5,
-    "spinSpeedRollMultiplier": 1.0,
+    "spinSpeedRollMultiplier": 0.2,
     "spinVelocityThreshold": 5
   },
   "collision": {
