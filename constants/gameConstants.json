@@ -27,11 +27,10 @@
     "startBountyMax": 8
   },
 "marble": {
-    "shooterTargetWidth": 100,
+    "shooterTargetWidth": 60,
     "spinEnabled": true,
     "spinSpeedMin": 0.0,
     "spinSpeedMax": 1.0,
-    "boostSpinMultiplier": 500.0,
     "shadowEnabled": true,
     "shadowOffsetX": 12,
     "shadowOffsetY": 12,
@@ -84,8 +83,8 @@
     "gravity": 40
   },
   "boost": {
-    "shrinkagePerSecond": 6,
-    "spinMultiplier": 5.0
+    "shrinkagePerSecond": 10,
+    "spinMultiplier": 300.0
   },
   "death": {
     "explosionEnabled": true,
