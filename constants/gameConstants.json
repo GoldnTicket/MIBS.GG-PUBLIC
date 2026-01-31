@@ -110,8 +110,8 @@
   "zoom": {
     "max": 1.0,
     "min": 0.505,
-    "scoreAtMin": 5000,
-    "lerpPer60": 0.25,
+    "scoreAtMin": 2000,
+    "lerpPer60": 0.55,
     "progressExponent": 5.5
   },
   "face": {
@@ -129,7 +129,7 @@
   "depths": {
     "background": -2000,
     "backgroundOuter": -1000,
-    "peeweeShadows": 1,
+    "peeweeShadows": 3,
     "boostDust": 2,
     "peewees": 5,
     "marbleShadows": 4,
