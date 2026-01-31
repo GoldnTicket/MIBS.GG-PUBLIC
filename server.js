@@ -590,6 +590,14 @@ function checkCoinCollisions() {
 // ============================================================================
 // DEATH & DROPS (with Golden Marble from Doc 15)
 // ============================================================================
+// ============================================================================
+// HELPER FUNCTIONS (after io initialization)
+// ============================================================================
+
+
+// ============================================================================
+// COLLISSIONS
+// ============================================================================
 
 function killMarble(marble, killerId) {
   if (!marble.alive) return;
@@ -723,6 +731,7 @@ function killMarble(marble, killerId) {
     killerId: killerId,
     position: { x: marble.x, y: marble.y }
   });
+
 
 function updateGoldenMarble() {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
