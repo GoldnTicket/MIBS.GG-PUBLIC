@@ -21,7 +21,7 @@
     "widthVsLengthMult": 1.0
   },
   "bot": {
-    "count": 2,
+    "count": 10,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
@@ -43,7 +43,7 @@
     "radius": 50,
     "targetWidth": 100,
     "mass": 2.0,
-    "friction": 0.92,
+    "friction": 0.22,
     "dropValueMultiplier": 2.0,
     "rollEnabled": true,
     "rollDurationMin": 1000,
@@ -108,7 +108,7 @@
     "speedMultiplier": 1.10
   },
   "zoom": {
-    "max": 1.2,
+    "max": 1.0,
     "min": 0.505,
     "scoreAtMin": 5000,
     "lerpPer60": 0.25,
