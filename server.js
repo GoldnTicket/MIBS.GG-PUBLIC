@@ -662,29 +662,24 @@ function spawnCoin() {
   const angle = Math.random() * Math.PI * 2;
   const distance = Math.random() * gameConstants.arena.radius * 0.85;
   
+  // ✅ ALWAYS give initial roll velocity
+  const rollAngle = Math.random() * Math.PI * 2;
+const min = gameConstants.peewee?.initialRollSpeedMin || 80;
+  const max = gameConstants.peewee?.initialRollSpeedMax || 180;
+  const rollSpeed = min + Math.random() * (max - min);
+  
   const coin = {
     id: `coin_${Date.now()}_${Math.random()}`,
     x: Math.cos(angle) * distance,
     y: Math.sin(angle) * distance,
-    vx: 0,
-    vy: 0,
-    radius: gameConstants.peewee?.radius || 25,
-    mass: gameConstants.peewee?.mass || 1.0,
-    growthValue: gameConstants.peewee?.growthValue || 10,
-    friction: gameConstants.peewee?.friction || 0.98
+    vx: Math.cos(rollAngle) * rollSpeed,
+    vy: Math.sin(rollAngle) * rollSpeed,
+    radius: gameConstants.peewee?.radius || 50,
+    mass: gameConstants.peewee?.mass || 2.0,
+    growthValue: gameConstants.peewee?.growthValue || 20,
+    friction: gameConstants.peewee?.friction || 0.92,
+    marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)]
   };
-  
-  // Initial roll velocity
-  if (gameConstants.peewee?.rollEnabled) {
-    const rollAngle = Math.random() * Math.PI * 2;
-    const rollSpeed = Math.random() * (
-      (gameConstants.peewee.initialRollSpeedMax || 180) - 
-      (gameConstants.peewee.initialRollSpeedMin || 80)
-    ) + (gameConstants.peewee.initialRollSpeedMin || 80);
-    
-    coin.vx = Math.cos(rollAngle) * rollSpeed;
-    coin.vy = Math.sin(rollAngle) * rollSpeed;
-  }
   
   gameState.coins.push(coin);
 }
@@ -758,28 +753,39 @@ function killMarble(marble, killerId) {
   const totalValue = marble.bounty || 1;
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   
-  const coinsToSpawn = Math.min(numDrops, MAX_COINS - gameState.coins.length);
+// ✅ Drop 5 peewees per segment (not 1)
+  const peweesPerSegment = 5;
+  const maxPeewees = Math.min(numSegments * peweesPerSegment, MAX_COINS - gameState.coins.length);
   
-  for (let i = 0; i < coinsToSpawn; i++) {
-    const dist = (i + 1) * segmentSpacing;
+  for (let segIdx = 0; segIdx < numSegments; segIdx++) {
+    const dist = (segIdx + 1) * segmentSpacing;
     const sample = marble.pathBuffer.sampleBack(dist);
     
-    const randomAngle = Math.random() * Math.PI * 2;
-    const randomSpeed = 80 + Math.random() * 100;
-    
-    gameState.coins.push({
-      id: `coin_${Date.now()}_${Math.random()}_${i}`,
-      x: sample.x || marble.x,
-      y: sample.y || marble.y,
-      vx: Math.cos(randomAngle) * randomSpeed,
-      vy: Math.sin(randomAngle) * randomSpeed,
-      growthValue: Math.floor(valuePerDrop * 10) || 1,
-      radius: gameConstants.peewee?.radius || 15,
-      mass: gameConstants.peewee?.mass || 1.0,
-      friction: gameConstants.peewee?.friction || 0.98,
-      marbleType: marble.marbleType || 'GALAXY1',
-      sizeMultiplier: 1.0
-    });
+    // Drop 5 peewees from this segment position
+    for (let p = 0; p < peweesPerSegment; p++) {
+      if (gameState.coins.length >= MAX_COINS) break;
+      
+      // Random scatter around segment position
+      const scatterAngle = Math.random() * Math.PI * 2;
+      const scatterDist = Math.random() * 30; // Small scatter radius
+      
+      const randomAngle = Math.random() * Math.PI * 2;
+      const randomSpeed = 80 + Math.random() * 120;
+      
+      gameState.coins.push({
+        id: `coin_${Date.now()}_${Math.random()}_${segIdx}_${p}`,
+        x: (sample.x || marble.x) + Math.cos(scatterAngle) * scatterDist,
+        y: (sample.y || marble.y) + Math.sin(scatterAngle) * scatterDist,
+        vx: Math.cos(randomAngle) * randomSpeed,
+        vy: Math.sin(randomAngle) * randomSpeed,
+        growthValue: Math.floor(valuePerDrop * 10) || 1,
+        radius: gameConstants.peewee?.radius || 50,
+        mass: gameConstants.peewee?.mass || 2.0,
+        friction: gameConstants.peewee?.friction || 0.92,
+        marbleType: marble.marbleType || 'GALAXY1',
+        rotation: 0
+      });
+    }
   }
   
   let killer = null;
@@ -1250,7 +1256,7 @@ const cleanCoins = gameState.coins.map(c => ({
     radius: c.radius,
     growthValue: c.growthValue,
     marbleType: c.marbleType,
-    rotation: c.rotation || 0  // ✅ Send rotation to client
+    rotation: c.rotation || 0  // ✅ This should be here
   }));
   
   io.emit('gameState', {
