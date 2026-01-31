@@ -950,6 +950,24 @@ function initializeGame() {
   }
 }
 
+
+// ============================================================================
+// GOLDEN MARBLE UPDATE
+// ============================================================================
+function updateGoldenMarble() {
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  
+  allMarbles.forEach(m => m.isGolden = false);
+  
+  if (allMarbles.length > 0) {
+    const highest = allMarbles.reduce((prev, current) => {
+      return (current.bounty || 0) > (prev.bounty || 0) ? current : prev;
+    });
+    
+    if (highest.bounty > 0) highest.isGolden = true;
+  }
+}
+
 // ============================================================================
 // GAME LOOP (60 TPS)
 // ============================================================================
