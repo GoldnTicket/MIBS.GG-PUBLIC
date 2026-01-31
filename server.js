@@ -43,9 +43,13 @@ if (MARBLE_TYPES.length === 0) {
 // PEEWEE PHYSICS UPDATE
 // ============================================================================
 function updatePeeweePhysics(dt) {
-  const friction = 0.98;
-  const gravity = 20;  // Slight downward drift
-  const bounceMultiplier = 0.7;  // Energy loss on bounce
+  const friction = gameConstants.peewee?.friction || 0.92;
+  const gravity = gameConstants.peewee?.gravity || 15;
+  const bounceMultiplier = gameConstants.peewee?.bounceMultiplier || 0.85;
+  const peeweeBounceMultiplier = gameConstants.peewee?.peeweeBounceMultiplier || 0.90;
+  const spinVelocityThreshold = gameConstants.peewee?.spinVelocityThreshold || 15;
+  const spinSpeedMin = gameConstants.peewee?.spinSpeedMin || 0.5;
+  const spinSpeedMax = gameConstants.peewee?.spinSpeedMax || 2.5;
   
   for (const peewee of gameState.coins) {
     // Apply velocity
@@ -59,8 +63,23 @@ function updatePeeweePhysics(dt) {
     // Apply gravity
     peewee.vy += gravity * dt;
     
+    // Calculate velocity magnitude
+    const speed = Math.sqrt(peewee.vx * peewee.vx + peewee.vy * peewee.vy);
+    
+    // ✅ ONLY SPIN WHEN ROLLING (speed above threshold)
+    if (!peewee._spinSpeed) {
+      peewee._spinSpeed = (Math.random() * (spinSpeedMax - spinSpeedMin) + spinSpeedMin) * (Math.random() > 0.5 ? 1 : -1);
+    }
+    
+    if (speed > spinVelocityThreshold) {
+      // Spin proportional to speed
+      const spinMultiplier = Math.min(speed / 100, 2.0);
+      peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
+    }
+    // If speed below threshold, rotation stays frozen
+    
     // Stop if moving very slowly
-    if (Math.abs(peewee.vx) < 5 && Math.abs(peewee.vy) < 5) {
+    if (speed < 5) {
       peewee.vx = 0;
       peewee.vy = 0;
     }
@@ -93,7 +112,7 @@ function updatePeeweePhysics(dt) {
       const dy = peewee.y - marble.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      if (dist < marbleRadius + peewee.radius) {
+      if (dist < marbleRadius + peewee.radius && dist > 0) {
         // Calculate normal
         const nx = dx / dist;
         const ny = dy / dist;
@@ -110,7 +129,7 @@ function updatePeeweePhysics(dt) {
       }
     }
     
-    // ✅ PEEWEE-PEEWEE COLLISION
+    // ✅ PEEWEE-PEEWEE COLLISION (with higher energy retention)
     for (const other of gameState.coins) {
       if (other === peewee) continue;
       
@@ -127,10 +146,10 @@ function updatePeeweePhysics(dt) {
         // Exchange velocities (simplified elastic collision)
         const tempVx = peewee.vx;
         const tempVy = peewee.vy;
-        peewee.vx = other.vx * bounceMultiplier;
-        peewee.vy = other.vy * bounceMultiplier;
-        other.vx = tempVx * bounceMultiplier;
-        other.vy = tempVy * bounceMultiplier;
+        peewee.vx = other.vx * peeweeBounceMultiplier;
+        peewee.vy = other.vy * peeweeBounceMultiplier;
+        other.vx = tempVx * peeweeBounceMultiplier;
+        other.vy = tempVy * peeweeBounceMultiplier;
         
         // Separate peewees
         const overlap = minDist - dist;
@@ -142,7 +161,6 @@ function updatePeeweePhysics(dt) {
     }
   }
 }
-  
 
 // ============================================================================
 // SPATIAL GRID (from Doc 15)
@@ -1231,7 +1249,8 @@ const cleanCoins = gameState.coins.map(c => ({
     vy: c.vy,
     radius: c.radius,
     growthValue: c.growthValue,
-    marbleType: c.marbleType  // ✅ CRITICAL: Send marble type to client!
+    marbleType: c.marbleType,
+    rotation: c.rotation || 0  // ✅ Send rotation to client
   }));
   
   io.emit('gameState', {
