@@ -1188,7 +1188,7 @@ const cleanCoins = gameState.coins.map(c => ({
 // ============================================================================
 server.listen(PORT, () => {
   console.log(`╔═══════════════════════════════════╗`);
-  console.log(`║   MIBS.GG - HYBRID BEST OF BOTH  ║`);
+  console.log(`║   MIBS.GG - HYBRID BEST OF BOTH CHECK THIS OUT?!?  ║`);
   console.log(`╠═══════════════════════════════════╣`);
   console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
   console.log(`║ Version: ${gameConstants.version.padEnd(23)}║`);
