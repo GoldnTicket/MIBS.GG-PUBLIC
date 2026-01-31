@@ -438,6 +438,14 @@ if (!other.alive) continue;
         continue; // Skip body check if head-to-head happened
       }
       
+// ✅ EMIT COLLISION EVENT FOR VISUAL EFFECTS
+io.emit('collision', {
+  x: (marble.x + other.x) / 2,
+  y: (marble.y + other.y) / 2,
+  timestamp: Date.now()
+});
+
+
       // ✅ CHECK 2: HEAD-to-BODY collision (check ALL body segments)
       if (other.pathBuffer && other.pathBuffer.samples.length > 1) {
         const segmentSpacing = 20;
@@ -578,28 +586,41 @@ function killMarble(marble, killerId) {
   
   marble.alive = false;
   
-  // ✅ Calculate drops: 2 peewees per segment of the chain
-  const segmentSpacing = 20;  // Match server physics
+  // ✅ Calculate drops from ACTUAL segment positions
+  const leadRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+  const segmentSpacing = leadRadius * (gameConstants.spline?.segmentSpacingMultiplier || 2);
   const bodyLength = marble.lengthScore * 2;
   const numSegments = Math.floor(bodyLength / segmentSpacing);
-  const numDrops = numSegments * 2;  // 2 per segment
+  const numDrops = numSegments * 5; // 5 per segment
   
-  // ✅ Split total bounty value evenly among all drops
   const totalValue = marble.bounty || 1;
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   
   const coinsToSpawn = Math.min(numDrops, MAX_COINS - gameState.coins.length);
+  
+  // ✅ DROP FROM EACH SEGMENT POSITION
   for (let i = 0; i < coinsToSpawn; i++) {
-    const angle = (i / coinsToSpawn) * Math.PI * 2;
-    const distance = 50 + Math.random() * 100;
+    const dist = (i + 1) * segmentSpacing;
+    const sample = marble.pathBuffer.sampleBack(dist);
+    
+    // ✅ RANDOM VELOCITY (not circular pattern!)
+    const randomAngle = Math.random() * Math.PI * 2;
+    const randomSpeed = Phaser.Math.FloatBetween(
+      gameConstants.peewee?.initialRollSpeedMin || 80,
+      gameConstants.peewee?.initialRollSpeedMax || 180
+    );
     
     gameState.coins.push({
-      id: `coin_${Date.now()}_${Math.random()}`,
-      x: marble.x + Math.cos(angle) * distance,
-      y: marble.y + Math.sin(angle) * distance,
-      growthValue: Math.floor(valuePerDrop * 10) || 1,  // Convert to growth value
-      radius: gameConstants.peewee.radius,
-      marbleType: marble.marbleType || 'GALAXY1',  // ✅ Same texture as dead marble
+      id: `coin_${Date.now()}_${Math.random()}_${i}`,
+      x: sample.x || marble.x,  // Use segment position, fallback to head
+      y: sample.y || marble.y,
+      vx: Math.cos(randomAngle) * randomSpeed,  // ✅ INITIAL VELOCITY!
+      vy: Math.sin(randomAngle) * randomSpeed,
+      growthValue: Math.floor(valuePerDrop * 10) || 1,
+      radius: gameConstants.peewee?.radius || 15,
+      mass: gameConstants.peewee?.mass || 1.0,
+      friction: gameConstants.peewee?.friction || 0.98,
+      marbleType: marble.marbleType || 'GALAXY1',  // ✅ SAME TYPE AS DEAD MARBLE
       sizeMultiplier: 1.0
     });
   }
@@ -1192,7 +1213,7 @@ server.listen(PORT, () => {
   console.log(`╠═══════════════════════════════════╣`);
   console.log(`║ Port: ${PORT.toString().padEnd(28)}║`);
   console.log(`║ Version: ${gameConstants.version.padEnd(23)}║`);
-  console.log(`║ Tick Rate: 60 TPS (Slither.io)   ║`);
+  console.log(`║ Tick Rateology: 60 TPS (Slither.io)   ║`);
   console.log(`╚═══════════════════════════════════╝`);
   
   initializeGame();
