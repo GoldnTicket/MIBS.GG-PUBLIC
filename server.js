@@ -728,10 +728,11 @@ function spawnBot(id) {
 }
 
 function spawnCoin() {
-  if (gameState.coins.length >= MAX_COINS) return;
+  // ✅ NEW: Only spawn if less than 100 peewees exist
+  if (gameState.coins.length >= 100) return;
   
   const angle = Math.random() * Math.PI * 2;
-  const distance = Math.random() * gameConstants.arena.radius * 0.85;
+  const distance = Math.random() * gameConstants.arena.radius * 0.95;
   
   // ✅ ALWAYS give initial roll velocity
   const rollAngle = Math.random() * Math.PI * 2;
