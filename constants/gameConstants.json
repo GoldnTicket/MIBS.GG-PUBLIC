@@ -87,8 +87,12 @@
     "gravity": 40
   },
   
-  "boost": {
-    "spinMultiplier": 3000.0
+"boost": {
+  "spinMultiplier": 3000.0,
+  "glowEnabled": true,
+  "glowAlpha": 0.6,
+  "glowScale": 1.1
+},
   },
   
   "death": {
