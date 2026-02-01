@@ -21,7 +21,7 @@ const gameConstants = require('./constants/gameConstants.json');
 const PORT = process.env.PORT || 3001;
 const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const MAX_BOTS = gameConstants.bot?.count ?? 0;
-const MAX_COINS = 500;
+const MAX_COINS = 200;
 const PLAYER_TIMEOUT = 15000;
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
@@ -830,6 +830,10 @@ function killMarble(marble, killerId) {
   
   const totalValue = marble.bounty || 1;
   const valuePerDrop = totalValue / Math.max(1, actualSegments * peweesPerSegment);
+  
+  // ✅ ADD THIS DEBUG LOG:
+  console.log(`  📍 Segment ${segIdx}: dist=${dist.toFixed(0)}, pos=(${sample.x?.toFixed(0) || 'NONE'}, ${sample.y?.toFixed(0) || 'NONE'}), head=(${marble.x.toFixed(0)}, ${marble.y.toFixed(0)})`);
+  
   
   for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
     const dist = (segIdx + 1) * segmentSpacing;
