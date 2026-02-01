@@ -69,7 +69,7 @@
     "gridSizePx": 64
   },
   "suction": {
-    "extraRadius": 60
+    "extraRadius": 160
   },
   "dust": {
     "enabled": true,
