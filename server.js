@@ -831,14 +831,12 @@ function killMarble(marble, killerId) {
   const totalValue = marble.bounty || 1;
   const valuePerDrop = totalValue / Math.max(1, actualSegments * peweesPerSegment);
   
-  // ✅ ADD THIS DEBUG LOG:
-  console.log(`  📍 Segment ${segIdx}: dist=${dist.toFixed(0)}, pos=(${sample.x?.toFixed(0) || 'NONE'}, ${sample.y?.toFixed(0) || 'NONE'}), head=(${marble.x.toFixed(0)}, ${marble.y.toFixed(0)})`);
-  
-  
   for (let segIdx = 0; segIdx < actualSegments; segIdx++) {
     const dist = (segIdx + 1) * segmentSpacing;
     const sample = marble.pathBuffer.sampleBack(dist);
     
+      console.log(`  📍 Segment ${segIdx}: dist=${dist.toFixed(0)}, pos=(${sample.x?.toFixed(0) || 'NONE'}, ${sample.y?.toFixed(0) || 'NONE'}), head=(${marble.x.toFixed(0)}, ${marble.y.toFixed(0)})`);
+
     for (let p = 0; p < peweesPerSegment; p++) {
       if (gameState.coins.length >= MAX_COINS) break;
       
