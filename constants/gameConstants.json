@@ -84,7 +84,7 @@
   },
   "boost": {
     "shrinkagePerSecond": 10,
-    "spinMultiplier": 300.0
+    "spinMultiplier": 3000.0
   },
   "death": {
     "explosionEnabled": true,
