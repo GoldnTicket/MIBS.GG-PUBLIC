@@ -169,12 +169,14 @@ function updatePeeweePhysics(dt) {
       }
       
       // Check BODY SEGMENT collisions
+// Check BODY SEGMENT collisions (only check nearby segments for performance)
       if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
         const segmentSpacing = 20;
         const bodyLength = marble.lengthScore * 2;
         const numSegments = Math.floor(bodyLength / segmentSpacing);
         
-        for (let segIdx = 1; segIdx <= Math.min(numSegments, 20); segIdx++) {
+        // ✅ Only check first 10 segments for performance
+        for (let segIdx = 1; segIdx <= Math.min(numSegments, 10); segIdx++) {
           const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
           
           const segDx = peewee.x - sample.x;
@@ -1022,8 +1024,10 @@ function initializeGame() {
   };
   gameState.spatialGrid = new SpatialGrid(SPATIAL_GRID_SIZE, bounds);
   
-  for (let i = 0; i < MAX_COINS; i++) spawnCoin();
-  console.log(`✅ Spawned ${MAX_COINS} coins`);
+  // ✅ Spawn initial coins
+  const initialCoins = Math.min(MAX_COINS, 300);
+  for (let i = 0; i < initialCoins; i++) spawnCoin();
+  console.log(`✅ Spawned ${gameState.coins.length} initial coins`);
   
   if (MAX_BOTS > 0) {
     const spawnInterval = 10000 / MAX_BOTS;
@@ -1174,10 +1178,10 @@ setInterval(() => {
     if (bot.alive) updateBotAI(bot, TICK_RATE);
   }
   
-  // ========================================
+// ========================================
   // 4. UPDATE PEEWEE PHYSICS
   // ========================================
- updatePeeweePhysics(delta / 1000);
+  updatePeeweePhysics(dt);  // ✅ Use dt (already in seconds)
   
 
   
