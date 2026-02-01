@@ -21,7 +21,7 @@ const gameConstants = require('./constants/gameConstants.json');
 const PORT = process.env.PORT || 3001;
 const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const MAX_BOTS = gameConstants.bot?.count ?? 0;
-const MAX_COINS = 150;
+const MAX_COINS = 500;
 const PLAYER_TIMEOUT = 15000;
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
@@ -464,6 +464,7 @@ function checkCollisions(gameState, C) {
       
       if (dist < (headRadius + otherHeadRadius) * 0.85) {
         // HEAD-to-HEAD: Use angle comparison
+      // HEAD-to-HEAD: Use angle comparison
         const collisionX = (marble.x + other.x) / 2;
         const collisionY = (marble.y + other.y) / 2;
         
@@ -477,10 +478,12 @@ function checkCollisions(gameState, C) {
         if (relativeAngleMarble < relativeAngleOther) {
           results.push({ killerId: other.id, victimId: marble.id });
           
-          // ✅ EMIT COLLISION EVENT
+          // ✅ EMIT COLLISION EVENT with player IDs
           io.emit('collision', {
             x: collisionX,
             y: collisionY,
+            playerId: marble.id,
+            otherPlayerId: other.id,
             timestamp: Date.now()
           });
         } else if (relativeAngleOther < relativeAngleMarble) {
@@ -489,6 +492,8 @@ function checkCollisions(gameState, C) {
           io.emit('collision', {
             x: collisionX,
             y: collisionY,
+            playerId: other.id,
+            otherPlayerId: marble.id,
             timestamp: Date.now()
           });
         } else {
@@ -499,6 +504,8 @@ function checkCollisions(gameState, C) {
           io.emit('collision', {
             x: collisionX,
             y: collisionY,
+            playerId: marble.id,
+            otherPlayerId: other.id,
             timestamp: Date.now()
           });
         }
@@ -521,15 +528,17 @@ function checkCollisions(gameState, C) {
           const segmentRadius = otherHeadRadius * 0.9;
           
           if (segDist < (headRadius + segmentRadius) * 0.85) {
-            results.push({ 
+       results.push({ 
               killerId: other.id,
               victimId: marble.id
             });
             
-            // ✅ EMIT COLLISION EVENT
+            // ✅ EMIT COLLISION EVENT with player IDs
             io.emit('collision', {
               x: sample.x,
               y: sample.y,
+              playerId: marble.id,
+              otherPlayerId: other.id,
               timestamp: Date.now()
             });
             break;
