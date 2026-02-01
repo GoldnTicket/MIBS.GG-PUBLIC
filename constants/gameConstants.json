@@ -1,32 +1,36 @@
 {
-  "version": "3.0.0-complete",
+  "version": "3.1.0-clean",
+  
   "arena": {
     "radius": 3000,
     "diameter": 6000,
     "spawnMinDistance": 500
   },
+  
   "movement": {
     "normalSpeed": 400,
     "boostMultiplier": 3.0,
-    "boostSpeed": 1000,
     "turnRateMaxDegPerSec": 280,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
     "minTurnMultiplier": 0.3,
     "boostGrowthLossPerSecond": 5
   },
+  
   "player": {
     "startLength": 200,
     "startBounty": 1,
     "widthVsLengthMult": 5.0
   },
+  
   "bot": {
     "count": 15,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
   },
-"marble": {
+  
+  "marble": {
     "shooterTargetWidth": 60,
     "spinEnabled": true,
     "spinSpeedMin": 0.0,
@@ -37,40 +41,37 @@
     "shadowAlpha": 0.9,
     "shadowSizeMultiplier": 0.95
   },
-"peewee": {
+  
+  "peewee": {
     "growthValue": 2,
     "radius": 25,
     "targetWidth": 50,
     "mass": 1.0,
     "friction": 0.995,
-    "dropValueMultiplier": 2.0,
-    "rollEnabled": true,
-    "rollDurationMin": 10,
-    "rollDurationMax": 4000,
-    "initialRollSpeedMin": 15,
-    "initialRollSpeedMax": 200,
-    "minRollSpeed": 100,
-    "collisionEnabled": true,
+    "initialRollSpeedMin": 80,
+    "initialRollSpeedMax": 180,
     "bounceMultiplier": 1.0,
     "peeweeBounceMultiplier": 1.0,
     "gravity": 1,
     "shadowEnabled": true,
-    "shadowOffsetX": 14,
     "shadowOffsetY": 14,
     "shadowAlpha": 0.9,
     "shadowWidthMultiplier": 0.85,
-    "spinSpeedMin": 0.05,
-    "spinSpeedMax": 0.10,
-    "spinSpeedRollMultiplier": 0.0,
-    "spinVelocityThreshold": 500
+    "spinSpeedMin": 0.5,
+    "spinSpeedMax": 2.5,
+    "spinSpeedRollMultiplier": 0.015,
+    "spinVelocityThreshold": 15
   },
+  
   "collision": {
     "dropValueMultiplier": 2.5,
     "gridSizePx": 64
   },
+  
   "suction": {
     "extraRadius": 160
   },
+  
   "dust": {
     "enabled": true,
     "spawnChance": 0.99,
@@ -82,30 +83,19 @@
     "scaleEnd": 0.1,
     "gravity": 40
   },
+  
   "boost": {
-    "shrinkagePerSecond": 10,
     "spinMultiplier": 3000.0
   },
+  
   "death": {
-    "explosionEnabled": true,
-    "explosionParticles": 800,
-    "explosionSpeedMin": 180,
-    "explosionSpeedMax": 400,
-    "explosionLifetimeMin": 400,
-    "explosionLifetimeMax": 800,
-    "explosionScaleStart": 0.2,
-    "explosionScaleEnd": 0.75,
-    "cameraShake": true,
-    "cameraShakeDuration": 5,
-    "cameraShakeIntensity": 0.005,
-    "fadeEnabled": true,
-    "fadeDelay": 200,
-    "fadeDuration": 400,
-    "segmentFadeStagger": 30
+    "fadeDuration": 250
   },
+  
   "golden": {
     "speedMultiplier": 1.10
   },
+  
   "zoom": {
     "max": 1.0,
     "min": 0.505,
@@ -113,6 +103,7 @@
     "lerpPer60": 0.55,
     "progressExponent": 5.5
   },
+  
   "face": {
     "spritesEnabled": true,
     "sizeScale": 0.5,
@@ -121,17 +112,19 @@
     "offsetScaleMultiplier": 1.2,
     "transitionDuration": 150
   },
+  
   "spline": {
     "pathStepPx": 1,
     "segmentSpacingMultiplier": 1.1
   },
+  
   "depths": {
     "background": -2000,
     "backgroundOuter": -1000,
-    "peeweeShadows": 3,
     "boostDust": 2,
-    "peewees": 5,
+    "peeweeShadows": 3,
     "marbleShadows": 4,
+    "peewees": 5,
     "marbleSegmentBase": 6,
     "marbleSegmentIncrement": 0.01,
     "marbleContainer": 10,
@@ -142,11 +135,13 @@
     "ui": 3000,
     "overlay": 9000
   },
+  
   "ui": {
     "cashoutX": 16,
     "cashoutY": 16,
     "cashoutWidth": 220
   },
+  
   "cashout": {
     "tiers": [
       {"threshold": 1, "payout": 0},
@@ -160,6 +155,7 @@
       {"threshold": 999999999, "payout": 1000000}
     ]
   },
+  
   "ranks": [
     {"maxKills": 0, "label": "NOOB"},
     {"maxKills": 5, "label": "Beginner"},
@@ -168,6 +164,7 @@
     {"maxKills": 100, "label": "Champion"},
     {"maxKills": 999999999, "label": "Legend"}
   ],
+  
   "pickupThemes": {
     "GALAXY1": {"key": "GALAXY1", "isShooter": true},
     "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true},
@@ -177,4 +174,3 @@
     "POISON FROG": {"key": "POISON FROG", "isShooter": true}
   }
 }
-
