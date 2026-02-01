@@ -6,10 +6,10 @@
     "spawnMinDistance": 500
   },
   "movement": {
-    "normalSpeed": 300,
-    "boostMultiplier": 1.8,
-    "boostSpeed": 500,
-    "turnRateMaxDegPerSec": 200,
+    "normalSpeed": 400,
+    "boostMultiplier": 2.0,
+    "boostSpeed": 800,
+    "turnRateMaxDegPerSec": 280,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
     "minTurnMultiplier": 0.3,
@@ -69,7 +69,7 @@
     "gridSizePx": 64
   },
   "suction": {
-    "extraRadius": 30
+    "extraRadius": 60
   },
   "dust": {
     "enabled": true,
