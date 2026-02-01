@@ -17,11 +17,12 @@
     "boostGrowthLossPerSecond": 5
   },
   
-  "player": {
-    "startLength": 200,
-    "startBounty": 1,
-    "widthVsLengthMult": 5.0
-  },
+"player": {
+  "startLength": 200,
+  "startBounty": 1,
+  "widthVsLengthMult": 5.0,
+  "startRadius": 30
+},
   
   "bot": {
     "count": 10,
@@ -30,17 +31,19 @@
     "startBountyMax": 8
   },
   
-  "marble": {
-    "shooterTargetWidth": 60,
-    "spinEnabled": true,
-    "spinSpeedMin": 0.0,
-    "spinSpeedMax": 1.0,
-    "shadowEnabled": true,
-    "shadowOffsetX": 12,
-    "shadowOffsetY": 12,
-    "shadowAlpha": 0.9,
-    "shadowSizeMultiplier": 0.95
-  },
+"marble": {
+  "shooterTargetWidth": 60,
+  "radiusPerLength": 0.12,
+  "maxRadius": 80,
+  "spinEnabled": true,
+  "spinSpeedMin": 0.0,
+  "spinSpeedMax": 1.0,
+  "shadowEnabled": true,
+  "shadowOffsetX": 12,
+  "shadowOffsetY": 12,
+  "shadowAlpha": 0.9,
+  "shadowSizeMultiplier": 0.95
+},
   
   "peewee": {
     "growthValue": 2,
