@@ -9,7 +9,7 @@
   
   "movement": {
     "normalSpeed": 400,
-    "boostMultiplier": 3.0,
+    "boostMultiplier": 10.0,
     "turnRateMaxDegPerSec": 280,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
@@ -24,7 +24,7 @@
   },
   
   "bot": {
-    "count": 15,
+    "count": 10,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
