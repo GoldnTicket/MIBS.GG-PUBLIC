@@ -25,7 +25,7 @@
 },
   
   "bot": {
-    "count": 10,
+    "count": 20,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
