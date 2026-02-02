@@ -90,7 +90,7 @@
 "boost": {
   "spinMultiplier": 3000.0,
   "glowEnabled": true,
-  "glowAlpha": 0.8,
+  "glowAlpha": 0.0,
   "glowScale": 10.5
   },
   
