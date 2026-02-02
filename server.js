@@ -811,22 +811,30 @@ function updateGoldenMarble() {
   }
 }
 
-// ✅ Check if player has reached new cashout tiers
 function checkCashoutTiers(player) {
   if (!player.alive || player.isBot) return;
   
   const tiers = gameConstants.cashout.tiers;
   const cashoutsThisCheck = [];
   
+  console.log(`🔍 CHECK CASHOUT | Player: ${player.name} | Bounty: ${player.bounty} | PaidTiers: [${Array.from(player.paidTiers).join(', ')}]`);
+  
   for (let i = 0; i < tiers.length; i++) {
     const tier = tiers[i];
     
+    // Debug each tier check
+    const alreadyPaid = player.paidTiers.has(i);
+    const meetsThreshold = player.bounty >= tier.threshold;
+    
+    console.log(`  Tier ${i}: threshold=${tier.threshold}, payout=$${tier.payout}, alreadyPaid=${alreadyPaid}, meetsThreshold=${meetsThreshold}`);
+    
     // Skip if already paid or if we haven't reached threshold yet
-    if (player.paidTiers.has(i) || player.bounty < tier.threshold) continue;
+    if (alreadyPaid || !meetsThreshold) continue;
     
     // Skip tiers with no payout
     if (tier.payout <= 0) {
       player.paidTiers.add(i);
+      console.log(`  ✅ Tier ${i} marked as paid (no payout)`);
       continue;
     }
     
@@ -834,7 +842,7 @@ function checkCashoutTiers(player) {
     player.paidTiers.add(i);
     player.totalPayout += tier.payout;
     
-    console.log(`💰 SERVER CASHOUT | Player: ${player.name} | Tier ${i}: $${tier.payout} | Total: $${player.totalPayout}`);
+    console.log(`💰 CASHOUT! | Player: ${player.name} | Tier ${i}: $${tier.payout} | Total: $${player.totalPayout} | PaidTiers now: [${Array.from(player.paidTiers).join(', ')}]`);
     
     cashoutsThisCheck.push({
       tierIndex: i,
@@ -843,10 +851,7 @@ function checkCashoutTiers(player) {
     });
   }
   
-  return cashoutsThisCheck;
-}
-
-function killMarble(marble, killerId) {
+ function killMarble(marble, killerId) {
   if (!marble.alive) return;
   
   marble.alive = false;
