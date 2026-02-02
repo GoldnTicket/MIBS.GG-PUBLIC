@@ -112,9 +112,9 @@
   
   "face": {
     "spritesEnabled": true,
-    "sizeScale": 0.5,
-    "scaleMultiplier": 0.5,
-    "offsetBasePx": 10,
+    "sizeScale": 0.7,
+    "scaleMultiplier": 0.7,
+    "offsetBasePx": 5,
     "offsetScaleMultiplier": 1.2,
     "transitionDuration": 150
   },
