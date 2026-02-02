@@ -8,7 +8,7 @@
   },
   
   "movement": {
-    "normalSpeed": 300,
+    "normalSpeed": 250,
     "boostMultiplier": 1.8,
     "turnRateMaxDegPerSec": 340,
     "turnStiffnessPerScale": 0.15,
@@ -47,22 +47,22 @@
   
   "peewee": {
     "growthValue": 2,
-    "radius": 25,
-    "targetWidth": 50,
+    "radius": 20,
+    "targetWidth": 40,
     "mass": 1.0,
     "friction": 0.995,
     "initialRollSpeedMin": 120,
     "initialRollSpeedMax": 200,
     "bounceMultiplier": 1.0,
     "peeweeBounceMultiplier": 1.0,
-    "gravity": 1,
+    "gravity": 1.5,
     "shadowEnabled": true,
     "shadowOffsetY": 14,
     "shadowAlpha": 0.9,
     "shadowWidthMultiplier": 0.85,
     "spinSpeedMin": 0.01,
     "spinSpeedMax": 2.5,
-    "spinSpeedRollMultiplier": 0.15,
+    "spinSpeedRollMultiplier": 0.10,
     "spinVelocityThreshold": 15
   },
   
@@ -90,8 +90,8 @@
 "boost": {
   "spinMultiplier": 3000.0,
   "glowEnabled": true,
-  "glowAlpha": 0.6,
-  "glowScale": 1.1
+  "glowAlpha": 0.8,
+  "glowScale": 1.5
   },
   
   "death": {
@@ -103,7 +103,7 @@
   },
   
   "zoom": {
-    "max": 1.2,
+    "max": 1.0,
     "min": 0.505,
     "scoreAtMin": 2000,
     "lerpPer60": 0.55,
@@ -176,7 +176,7 @@
     "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true},
     "USA1": {"key": "USA1", "isShooter": true},
     "FRANCE1": {"key": "FRANCE1", "isShooter": true},
-    "AUSSIE FLAG": {"key": "AUSSIE FLAG", "isShooter": true},
-    "POISON FROG": {"key": "POISON FROG", "isShooter": true}
+    "AUSSIEFLAG": {"key": "AUSSIEFLAG", "isShooter": true},
+    "POISONFROG": {"key": "POISONFROG", "isShooter": true}
   }
 }
