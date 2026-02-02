@@ -824,8 +824,8 @@ function killMarble(marble, killerId) {
   
   console.log(`💎 DROP: length=${marble.lengthScore}, segments=${numSegments}, pathBuffer=${marble.pathBuffer?.samples?.length || 0}`);
   
-  const maxTotalPeewees = 250;
-  const peweesPerSegment = 5;
+  const maxTotalPeewees = 300;
+  const peweesPerSegment = 2;
   const maxSegments = Math.floor(maxTotalPeewees / peweesPerSegment);
   const actualSegments = Math.min(numSegments, maxSegments);
   
