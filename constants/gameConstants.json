@@ -171,12 +171,23 @@
     {"maxKills": 999999999, "label": "Legend"}
   ],
   
-  "pickupThemes": {
-    "GALAXY1": {"key": "GALAXY1", "isShooter": true},
-    "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true},
-    "USA1": {"key": "USA1", "isShooter": true},
-    "FRANCE1": {"key": "FRANCE1", "isShooter": true},
-    "AUSSIEFLAG": {"key": "AUSSIEFLAG", "isShooter": true},
-    "POISONFROG": {"key": "POISONFROG", "isShooter": true}
-  }
+"pickupThemes": {
+  "GALAXY1": {"key": "GALAXY1", "isShooter": true},
+  "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true},
+  "USA1": {"key": "USA1", "isShooter": true},
+  "FRANCE1": {"key": "FRANCE1", "isShooter": true},
+  "POISON FROG": {"key": "POISON FROG", "isShooter": true},
+  "BANANASWIRL": {"key": "BANANASWIRL", "isShooter": true},
+  "BLUEMOON": {"key": "BLUEMOON", "isShooter": true},
+  "CANADA": {"key": "CANADA", "isShooter": true},
+  "CATSEYEBLUEYELLOW": {"key": "CATSEYEBLUEYELLOW", "isShooter": true},
+  "CATSEYE GREENBLUE": {"key": "CATSEYE GREENBLUE", "isShooter": true},
+  "CATSEYEGREENORANGE": {"key": "CATSEYEGREENORANGE", "isShooter": true},
+  "CHINA": {"key": "CHINA", "isShooter": true},
+  "GOLDEN MIB": {"key": "GOLDEN MIB", "isShooter": true},
+  "KOIFISH": {"key": "KOIFISH", "isShooter": true},
+  "STARDUSTGREEN": {"key": "STARDUSTGREEN", "isShooter": true},
+  "SUNSET": {"key": "SUNSET", "isShooter": true},
+  "UNICORN": {"key": "UNICORN", "isShooter": true}
+}
 }
