@@ -1033,15 +1033,14 @@ const player = {
       pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
       _lastValidX: spawnPos.x,
       _lastValidY: spawnPos.y,
-      _lastAngle: 0,
-
-_lastAngle: 0,
+     _lastAngle: 0,
   lastProcessedInput: -1,  // ✅ FIX: Initialize for input reconciliation
   // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
 
-      // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
-      paidTiers: new Set(),
-      totalPayout: 0
+       
+paidTiers: new Set(),
+  totalPayout: 0,
+  lastProcessedInput: -1  // ✅ FIX: Initialize for input ack system
     };
     
     player.pathBuffer.reset(player.x, player.y);
