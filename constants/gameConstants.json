@@ -91,7 +91,7 @@
   "spinMultiplier": 3000.0,
   "glowEnabled": true,
   "glowAlpha": 0.8,
-  "glowScale": 1.5
+  "glowScale": 10.5
   },
   
   "death": {
