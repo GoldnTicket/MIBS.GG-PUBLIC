@@ -911,17 +911,26 @@ function killMarble(marble, killerId) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
       
-      if (killer.alive) {
-        killer.bounty = (killer.bounty || 0) + totalValue;
+     if (killer.alive) {
+        killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
         killer.kills = (killer.kills || 0) + 1;
         killer.lengthScore += 20;
         
+        // ✅ Check for cashouts immediately after bounty change
         if (!killer.isBot) {
+          const cashouts = checkCashoutTiers(killer);
+          
+          if (cashouts && cashouts.length > 0) {
+            cashouts.forEach(cashout => {
+              io.to(killer.id).emit('cashout', cashout);
+            });
+          }
+          
           io.to(killer.id).emit('playerKill', {
             killerId: killer.id,
             victimId: marble.id,
             victimName: marble.name || 'Player',
-            bountyGained: totalValue
+            bountyGained: dropInfo.bountyValue
           });
         }
       }
@@ -1291,25 +1300,13 @@ const collisionResults = checkCollisions(gameState, gameConstants);
   // ========================================
   // 9. PERIODIC UPDATES
   // ========================================
- if (tickCounter % 60 === 0) {
+if (tickCounter % 60 === 0) {
     updateGoldenMarble();
     const coinsToSpawn = MAX_COINS - gameState.coins.length;
     for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) spawnCoin();
   }
-  
-  // ✅ Check cashout tiers every 10 ticks (~12 times per second)
-  if (tickCounter % 5 === 0) {
-    Object.values(gameState.players).forEach(player => {
-      const cashouts = checkCashoutTiers(player);
-      
-      if (cashouts && cashouts.length > 0) {
-        // Emit each cashout individually for stacking effect
-        cashouts.forEach(cashout => {
-          io.to(player.id).emit('cashout', cashout);
-        });
-      }
-    });
-  }
+
+
   // ========================================
   // 10. STALE PLAYER CLEANUP
   // ========================================
