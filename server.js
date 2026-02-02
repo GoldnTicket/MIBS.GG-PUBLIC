@@ -278,11 +278,10 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.floor(totalValue / 10);
+  const numDrops = Math.floor(totalValue / 30);  // ✅ Was 10, now 20 = HALF as many peewees
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
-
 function findSafeSpawn(minDistance, arenaRadius) {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
   
