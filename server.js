@@ -625,10 +625,25 @@ function checkWallCollisions() {
 // COIN COLLISIONS
 // ============================================================================
 function checkCoinCollisions() {
+  // ✅ FIX: Clean up invalid coins FIRST
+  gameState.coins = gameState.coins.filter(coin => 
+    coin && 
+    coin.x !== undefined && 
+    coin.y !== undefined && 
+    !isNaN(coin.x) && 
+    !isNaN(coin.y)
+  );
+  
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   
   for (let i = gameState.coins.length - 1; i >= 0; i--) {
     const coin = gameState.coins[i];
+    
+    // ✅ FIX: Safety check for this coin
+    if (!coin || !coin.x || !coin.y) {
+      gameState.coins.splice(i, 1);
+      continue;
+    }
     
     for (const marble of allMarbles) {
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
@@ -639,6 +654,11 @@ function checkCoinCollisions() {
       if (dist < marbleRadius + coin.radius) {
         marble.lengthScore += coin.growthValue;
         gameState.coins.splice(i, 1);
+        
+        // ✅ FIX: Log coin consumption
+        if (gameState.coins.length % 10 === 0) {
+          console.log(`🍬 Coin eaten! Remaining: ${gameState.coins.length}/${MAX_COINS}`);
+        }
         break;
       }
       
@@ -727,15 +747,31 @@ function spawnBot(id) {
 }
 
 function spawnCoin() {
+  // ✅ FIX: Clean up invalid coins BEFORE checking length
+  gameState.coins = gameState.coins.filter(coin => 
+    coin && 
+    coin.x !== undefined && 
+    coin.y !== undefined && 
+    !isNaN(coin.x) && 
+    !isNaN(coin.y)
+  );
+  
   // ✅ NEW: Only spawn if less than 100 peewees exist
-  if (gameState.coins.length >= 100) return;
+  if (gameState.coins.length >= 100) {
+    // ✅ FIX: Log when hitting max (every 5 seconds)
+    if (!this._lastMaxCoinsLog || Date.now() - this._lastMaxCoinsLog > 5000) {
+      console.log(`⚠️ MAX COINS (100) reached, no spawning until some are eaten`);
+      this._lastMaxCoinsLog = Date.now();
+    }
+    return;
+  }
   
   const angle = Math.random() * Math.PI * 2;
   const distance = Math.random() * gameConstants.arena.radius * 0.95;
   
   // ✅ ALWAYS give initial roll velocity
   const rollAngle = Math.random() * Math.PI * 2;
-const min = gameConstants.peewee?.initialRollSpeedMin || 80;
+  const min = gameConstants.peewee?.initialRollSpeedMin || 80;
   const max = gameConstants.peewee?.initialRollSpeedMax || 180;
   const rollSpeed = min + Math.random() * (max - min);
   
@@ -753,6 +789,11 @@ const min = gameConstants.peewee?.initialRollSpeedMin || 80;
   };
   
   gameState.coins.push(coin);
+  
+  // ✅ FIX: Log every 10 spawns
+  if (gameState.coins.length % 10 === 0) {
+    console.log(`🎯 Spawned coin! Total: ${gameState.coins.length}/100`);
+  }
 }
 
 // ============================================================================
@@ -885,11 +926,10 @@ function checkCashoutTiers(player) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
       
-      // ✅ ONLY modify killer if they're alive
-      if (killer.alive) {
-        killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
-        killer.kills = (killer.kills || 0) + 1;
-        killer.lengthScore += 20;
+  if (killer.alive) {
+  killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
+  killer.kills = (killer.kills || 0) + 1;
+  // ✅ FIX: Removed lengthScore gain - length only from peewees!
         
         // ✅ Check for cashouts ONLY for player killers (not bots)
         if (!killer.isBot) {
@@ -1391,4 +1431,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-});
+})}
