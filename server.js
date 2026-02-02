@@ -1014,35 +1014,34 @@ io.on('connection', (socket) => {
     );
 
 const player = {
-      id: socket.id,
-      name: data.name || `Player${Math.floor(Math.random() * 1000)}`,
-      marbleType: data.marbleType || 'GALAXY1',
-      x: spawnPos.x,
-      y: spawnPos.y,
-      angle: 0,
-      targetAngle: 0,
-      lengthScore: gameConstants.player.startLength,
-      bounty: gameConstants.player.startBounty,
-      kills: 0,
-      alive: true,
-      boosting: false,
-      isBot: false,
-      isGolden: false,
-      lastUpdate: Date.now(),
-      spawnTime: Date.now(),
-      pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
-      _lastValidX: spawnPos.x,
-      _lastValidY: spawnPos.y,
-     _lastAngle: 0,
-  lastProcessedInput: -1,  // ✅ FIX: Initialize for input reconciliation
-  // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
+  id: socket.id,
+  name: data.name || `Player${Math.floor(Math.random() * 1000)}`,
+  marbleType: data.marbleType || 'GALAXY1',
+  x: spawnPos.x,
+  y: spawnPos.y,
+  angle: 0,
+  targetAngle: 0,
+  lengthScore: gameConstants.player.startLength,
+  bounty: gameConstants.player.startBounty,
+  kills: 0,
+  alive: true,
+  boosting: false,
+  isBot: false,
+  isGolden: false,
+  lastUpdate: Date.now(),
+  spawnTime: Date.now(),
+  pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+  _lastValidX: spawnPos.x,
+  _lastValidY: spawnPos.y,
+  _lastAngle: 0,
+  paidTiers: new Set(),
+  totalPayout: 0,
+  lastProcessedInput: -1,
+  spawnProtection: true
+};
 
        
-paidTiers: new Set(),
-  totalPayout: 0,
-  lastProcessedInput: -1  // ✅ FIX: Initialize for input ack system
-    };
-    
+   
     player.pathBuffer.reset(player.x, player.y);
     gameState.players[socket.id] = player;
 
