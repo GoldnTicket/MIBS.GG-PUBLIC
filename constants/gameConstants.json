@@ -114,7 +114,7 @@
     "spritesEnabled": true,
     "sizeScale": 0.7,
     "scaleMultiplier": 0.7,
-    "offsetBasePx": 5,
+    "offsetBasePx": 35,
     "offsetScaleMultiplier": 1.2,
     "transitionDuration": 150
   },
