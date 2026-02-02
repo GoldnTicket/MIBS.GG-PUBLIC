@@ -1034,6 +1034,11 @@ const player = {
       _lastValidX: spawnPos.x,
       _lastValidY: spawnPos.y,
       _lastAngle: 0,
+
+_lastAngle: 0,
+  lastProcessedInput: -1,  // ✅ FIX: Initialize for input reconciliation
+  // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
+
       // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
       paidTiers: new Set(),
       totalPayout: 0
