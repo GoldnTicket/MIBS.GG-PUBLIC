@@ -811,6 +811,41 @@ function updateGoldenMarble() {
   }
 }
 
+// ✅ Check if player has reached new cashout tiers
+function checkCashoutTiers(player) {
+  if (!player.alive || player.isBot) return;
+  
+  const tiers = gameConstants.cashout.tiers;
+  const cashoutsThisCheck = [];
+  
+  for (let i = 0; i < tiers.length; i++) {
+    const tier = tiers[i];
+    
+    // Skip if already paid or if we haven't reached threshold yet
+    if (player.paidTiers.has(i) || player.bounty < tier.threshold) continue;
+    
+    // Skip tiers with no payout
+    if (tier.payout <= 0) {
+      player.paidTiers.add(i);
+      continue;
+    }
+    
+    // ✅ CASHOUT TRIGGERED!
+    player.paidTiers.add(i);
+    player.totalPayout += tier.payout;
+    
+    console.log(`💰 SERVER CASHOUT | Player: ${player.name} | Tier ${i}: $${tier.payout} | Total: $${player.totalPayout}`);
+    
+    cashoutsThisCheck.push({
+      tierIndex: i,
+      amount: tier.payout,
+      total: player.totalPayout
+    });
+  }
+  
+  return cashoutsThisCheck;
+}
+
 function killMarble(marble, killerId) {
   if (!marble.alive) return;
   
@@ -949,7 +984,7 @@ io.on('connection', (socket) => {
       gameConstants.arena.radius
     );
 
-    const player = {
+const player = {
       id: socket.id,
       name: data.name || `Player${Math.floor(Math.random() * 1000)}`,
       marbleType: data.marbleType || 'GALAXY1',
@@ -957,21 +992,22 @@ io.on('connection', (socket) => {
       y: spawnPos.y,
       angle: 0,
       targetAngle: 0,
-      lengthScore: gameConstants.player?.startLength || 100,
-      bounty: gameConstants.player?.startBounty || 1,
+      lengthScore: gameConstants.player.startLength,
+      bounty: gameConstants.player.startBounty,
       kills: 0,
       alive: true,
-            spawnProtection: true,  // ✅ NEW: Spawn protection flag
-      spawnTime: Date.now(),  // ✅ NEW: Track spawn time
       boosting: false,
       isBot: false,
       isGolden: false,
       lastUpdate: Date.now(),
-      lastProcessedInput: -1, // ✅ Track last processed input sequence
-      pathBuffer: new PathBuffer(gameConstants.spline?.pathStepPx || 2),
+      spawnTime: Date.now(),
+      pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
       _lastValidX: spawnPos.x,
       _lastValidY: spawnPos.y,
-      _lastAngle: 0
+      _lastAngle: 0,
+      // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
+      paidTiers: new Set(),
+      totalPayout: 0
     };
     
     player.pathBuffer.reset(player.x, player.y);
@@ -1067,6 +1103,9 @@ function updateGoldenMarble() {
     if (highest.bounty > 0) highest.isGolden = true;
   }
 }
+
+
+
 
 // ============================================================================
 // GAME LOOP (60 TPS)
@@ -1255,9 +1294,22 @@ const collisionResults = checkCollisions(gameState, gameConstants);
  if (tickCounter % 60 === 0) {
     updateGoldenMarble();
     const coinsToSpawn = MAX_COINS - gameState.coins.length;
-    for(let i = 0; i < Math.min(coinsToSpawn, 30); i++) spawnCoin();
+    for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) spawnCoin();
   }
   
+  // ✅ Check cashout tiers every 10 ticks (~12 times per second)
+  if (tickCounter % 5 === 0) {
+    Object.values(gameState.players).forEach(player => {
+      const cashouts = checkCashoutTiers(player);
+      
+      if (cashouts && cashouts.length > 0) {
+        // Emit each cashout individually for stacking effect
+        cashouts.forEach(cashout => {
+          io.to(player.id).emit('cashout', cashout);
+        });
+      }
+    });
+  }
   // ========================================
   // 10. STALE PLAYER CLEANUP
   // ========================================
