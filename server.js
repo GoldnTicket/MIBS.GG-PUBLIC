@@ -903,16 +903,23 @@ function killMarble(marble, killerId) {
   const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants);
   
   const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
-  for (let i = 0; i < coinsToSpawn; i++) {
+for (let i = 0; i < coinsToSpawn; i++) {
     const angle = (i / coinsToSpawn) * Math.PI * 2;
     const distance = 50 + Math.random() * 100;
+    const explodeSpeed = 150 + Math.random() * 100;
     
     gameState.coins.push({
-      id: `coin_${Date.now()}_${Math.random()}`,
+      id: `coin_${Date.now()}_${Math.random()}_${i}`,
       x: marble.x + Math.cos(angle) * distance,
       y: marble.y + Math.sin(angle) * distance,
+      vx: Math.cos(angle) * explodeSpeed,
+      vy: Math.sin(angle) * explodeSpeed,
       growthValue: Math.floor(dropDist.valuePerDrop) || 5,
-      radius: gameConstants.peewee.radius
+      radius: gameConstants.peewee?.radius || 50,
+      mass: gameConstants.peewee?.mass || 2.0,
+      friction: gameConstants.peewee?.friction || 0.92,
+      marbleType: marble.marbleType || 'GALAXY1',
+      rotation: 0
     });
   }
   
