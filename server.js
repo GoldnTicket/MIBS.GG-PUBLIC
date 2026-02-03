@@ -278,7 +278,7 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.floor(totalValue / 30);  // ✅ Was 10, now 20 = HALF as many peewees
+  const numDrops = Math.max(5, Math.floor(totalValue / 10));  // Minimum 5 peewees, more for bigger marbles
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
@@ -903,6 +903,10 @@ function killMarble(marble, killerId) {
   const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants);
   
   const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
+
+const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
+  console.log(`💀 DEATH DROP: ${marble.name} | lengthScore=${marble.lengthScore} | totalValue=${dropInfo.totalValue} | spawning ${coinsToSpawn} peewees`);
+
 for (let i = 0; i < coinsToSpawn; i++) {
     const angle = (i / coinsToSpawn) * Math.PI * 2;
     const distance = 50 + Math.random() * 100;
