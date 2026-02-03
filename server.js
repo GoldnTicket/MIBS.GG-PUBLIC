@@ -278,10 +278,11 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.floor(totalValue / 30);  // ✅ Was 10, now 20 = HALF as many peewees
+  const numDrops = Math.floor(totalValue / 10);
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
+
 function findSafeSpawn(minDistance, arenaRadius) {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
   
@@ -625,25 +626,10 @@ function checkWallCollisions() {
 // COIN COLLISIONS
 // ============================================================================
 function checkCoinCollisions() {
-  // ✅ FIX: Clean up invalid coins FIRST
-  gameState.coins = gameState.coins.filter(coin => 
-    coin && 
-    coin.x !== undefined && 
-    coin.y !== undefined && 
-    !isNaN(coin.x) && 
-    !isNaN(coin.y)
-  );
-  
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   
   for (let i = gameState.coins.length - 1; i >= 0; i--) {
     const coin = gameState.coins[i];
-    
-    // ✅ FIX: Safety check for this coin
-    if (!coin || !coin.x || !coin.y) {
-      gameState.coins.splice(i, 1);
-      continue;
-    }
     
     for (const marble of allMarbles) {
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
@@ -654,11 +640,6 @@ function checkCoinCollisions() {
       if (dist < marbleRadius + coin.radius) {
         marble.lengthScore += coin.growthValue;
         gameState.coins.splice(i, 1);
-        
-        // ✅ FIX: Log coin consumption
-        if (gameState.coins.length % 10 === 0) {
-          console.log(`🍬 Coin eaten! Remaining: ${gameState.coins.length}/${MAX_COINS}`);
-        }
         break;
       }
       
@@ -747,31 +728,15 @@ function spawnBot(id) {
 }
 
 function spawnCoin() {
-  // ✅ FIX: Clean up invalid coins BEFORE checking length
-  gameState.coins = gameState.coins.filter(coin => 
-    coin && 
-    coin.x !== undefined && 
-    coin.y !== undefined && 
-    !isNaN(coin.x) && 
-    !isNaN(coin.y)
-  );
-  
   // ✅ NEW: Only spawn if less than 100 peewees exist
-  if (gameState.coins.length >= 100) {
-    // ✅ FIX: Log when hitting max (every 5 seconds)
-    if (!this._lastMaxCoinsLog || Date.now() - this._lastMaxCoinsLog > 5000) {
-      console.log(`⚠️ MAX COINS (100) reached, no spawning until some are eaten`);
-      this._lastMaxCoinsLog = Date.now();
-    }
-    return;
-  }
+  if (gameState.coins.length >= 100) return;
   
   const angle = Math.random() * Math.PI * 2;
   const distance = Math.random() * gameConstants.arena.radius * 0.95;
   
   // ✅ ALWAYS give initial roll velocity
   const rollAngle = Math.random() * Math.PI * 2;
-  const min = gameConstants.peewee?.initialRollSpeedMin || 80;
+const min = gameConstants.peewee?.initialRollSpeedMin || 80;
   const max = gameConstants.peewee?.initialRollSpeedMax || 180;
   const rollSpeed = min + Math.random() * (max - min);
   
@@ -789,11 +754,6 @@ function spawnCoin() {
   };
   
   gameState.coins.push(coin);
-  
-  // ✅ FIX: Log every 10 spawns
-  if (gameState.coins.length % 10 === 0) {
-    console.log(`🎯 Spawned coin! Total: ${gameState.coins.length}/100`);
-  }
 }
 
 // ============================================================================
@@ -926,10 +886,11 @@ function checkCashoutTiers(player) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
       
-  if (killer.alive) {
-  killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
-  killer.kills = (killer.kills || 0) + 1;
-  // ✅ FIX: Removed lengthScore gain - length only from peewees!
+      // ✅ ONLY modify killer if they're alive
+      if (killer.alive) {
+        killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
+        killer.kills = (killer.kills || 0) + 1;
+        killer.lengthScore += 20;
         
         // ✅ Check for cashouts ONLY for player killers (not bots)
         if (!killer.isBot) {
@@ -1014,34 +975,31 @@ io.on('connection', (socket) => {
     );
 
 const player = {
-  id: socket.id,
-  name: data.name || `Player${Math.floor(Math.random() * 1000)}`,
-  marbleType: data.marbleType || 'GALAXY1',
-  x: spawnPos.x,
-  y: spawnPos.y,
-  angle: 0,
-  targetAngle: 0,
-  lengthScore: gameConstants.player.startLength,
-  bounty: gameConstants.player.startBounty,
-  kills: 0,
-  alive: true,
-  boosting: false,
-  isBot: false,
-  isGolden: false,
-  lastUpdate: Date.now(),
-  spawnTime: Date.now(),
-  pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
-  _lastValidX: spawnPos.x,
-  _lastValidY: spawnPos.y,
-  _lastAngle: 0,
-  paidTiers: new Set(),
-  totalPayout: 0,
-  lastProcessedInput: -1,
-  spawnProtection: true
-};
-
-       
-   
+      id: socket.id,
+      name: data.name || `Player${Math.floor(Math.random() * 1000)}`,
+      marbleType: data.marbleType || 'GALAXY1',
+      x: spawnPos.x,
+      y: spawnPos.y,
+      angle: 0,
+      targetAngle: 0,
+      lengthScore: gameConstants.player.startLength,
+      bounty: gameConstants.player.startBounty,
+      kills: 0,
+      alive: true,
+      boosting: false,
+      isBot: false,
+      isGolden: false,
+      lastUpdate: Date.now(),
+      spawnTime: Date.now(),
+      pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+      _lastValidX: spawnPos.x,
+      _lastValidY: spawnPos.y,
+      _lastAngle: 0,
+      // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
+      paidTiers: new Set(),
+      totalPayout: 0
+    };
+    
     player.pathBuffer.reset(player.x, player.y);
     gameState.players[socket.id] = player;
 
@@ -1434,4 +1392,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-})}
+});
