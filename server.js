@@ -902,8 +902,6 @@ function killMarble(marble, killerId) {
   const dropInfo = calculateBountyDrop(marble, gameConstants);
   const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants);
   
-  const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
-
 const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
   console.log(`💀 DEATH DROP: ${marble.name} | lengthScore=${marble.lengthScore} | totalValue=${dropInfo.totalValue} | spawning ${coinsToSpawn} peewees`);
 
