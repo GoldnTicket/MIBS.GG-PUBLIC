@@ -278,11 +278,10 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.floor(totalValue / 10);
+  const numDrops = Math.floor(totalValue / 30);  // ✅ Was 10, now 20 = HALF as many peewees
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
-
 function findSafeSpawn(minDistance, arenaRadius) {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
   
@@ -626,10 +625,25 @@ function checkWallCollisions() {
 // COIN COLLISIONS
 // ============================================================================
 function checkCoinCollisions() {
+  // ✅ FIX: Clean up invalid coins FIRST
+  gameState.coins = gameState.coins.filter(coin => 
+    coin && 
+    coin.x !== undefined && 
+    coin.y !== undefined && 
+    !isNaN(coin.x) && 
+    !isNaN(coin.y)
+  );
+  
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
   
   for (let i = gameState.coins.length - 1; i >= 0; i--) {
     const coin = gameState.coins[i];
+    
+    // ✅ FIX: Safety check for this coin
+    if (!coin || !coin.x || !coin.y) {
+      gameState.coins.splice(i, 1);
+      continue;
+    }
     
     for (const marble of allMarbles) {
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
@@ -640,6 +654,11 @@ function checkCoinCollisions() {
       if (dist < marbleRadius + coin.radius) {
         marble.lengthScore += coin.growthValue;
         gameState.coins.splice(i, 1);
+        
+        // ✅ FIX: Log coin consumption
+        if (gameState.coins.length % 10 === 0) {
+          console.log(`🍬 Coin eaten! Remaining: ${gameState.coins.length}/${MAX_COINS}`);
+        }
         break;
       }
       
@@ -728,15 +747,31 @@ function spawnBot(id) {
 }
 
 function spawnCoin() {
+  // ✅ FIX: Clean up invalid coins BEFORE checking length
+  gameState.coins = gameState.coins.filter(coin => 
+    coin && 
+    coin.x !== undefined && 
+    coin.y !== undefined && 
+    !isNaN(coin.x) && 
+    !isNaN(coin.y)
+  );
+  
   // ✅ NEW: Only spawn if less than 100 peewees exist
-  if (gameState.coins.length >= 100) return;
+  if (gameState.coins.length >= 100) {
+    // ✅ FIX: Log when hitting max (every 5 seconds)
+    if (!this._lastMaxCoinsLog || Date.now() - this._lastMaxCoinsLog > 5000) {
+      console.log(`⚠️ MAX COINS (100) reached, no spawning until some are eaten`);
+      this._lastMaxCoinsLog = Date.now();
+    }
+    return;
+  }
   
   const angle = Math.random() * Math.PI * 2;
   const distance = Math.random() * gameConstants.arena.radius * 0.95;
   
   // ✅ ALWAYS give initial roll velocity
   const rollAngle = Math.random() * Math.PI * 2;
-const min = gameConstants.peewee?.initialRollSpeedMin || 80;
+  const min = gameConstants.peewee?.initialRollSpeedMin || 80;
   const max = gameConstants.peewee?.initialRollSpeedMax || 180;
   const rollSpeed = min + Math.random() * (max - min);
   
@@ -754,6 +789,11 @@ const min = gameConstants.peewee?.initialRollSpeedMin || 80;
   };
   
   gameState.coins.push(coin);
+  
+  // ✅ FIX: Log every 10 spawns
+  if (gameState.coins.length % 10 === 0) {
+    console.log(`🎯 Spawned coin! Total: ${gameState.coins.length}/100`);
+  }
 }
 
 // ============================================================================
@@ -822,19 +862,23 @@ function checkCashoutTiers(player) {
   for (let i = 0; i < tiers.length; i++) {
     const tier = tiers[i];
     
+    // Debug each tier check
     const alreadyPaid = player.paidTiers.has(i);
     const meetsThreshold = player.bounty >= tier.threshold;
     
     console.log(`  Tier ${i}: threshold=${tier.threshold}, payout=$${tier.payout}, alreadyPaid=${alreadyPaid}, meetsThreshold=${meetsThreshold}`);
     
+    // Skip if already paid or if we haven't reached threshold yet
     if (alreadyPaid || !meetsThreshold) continue;
     
+    // Skip tiers with no payout
     if (tier.payout <= 0) {
       player.paidTiers.add(i);
       console.log(`  ✅ Tier ${i} marked as paid (no payout)`);
       continue;
     }
     
+    // ✅ CASHOUT TRIGGERED!
     player.paidTiers.add(i);
     player.totalPayout += tier.payout;
     
@@ -847,11 +891,7 @@ function checkCashoutTiers(player) {
     });
   }
   
-  return cashoutsThisCheck;
-}
-
-// ✅ SEPARATE FUNCTION - NOT NESTED!
-function killMarble(marble, killerId) {
+ function killMarble(marble, killerId) {
   if (!marble.alive) return;
   
   marble.alive = false;
@@ -873,6 +913,7 @@ function killMarble(marble, killerId) {
     });
   }
   
+  // Get killer info
   let killer = null;
   let killerName = 'The Arena';
   let deathType = 'wall';
@@ -885,11 +926,12 @@ function killMarble(marble, killerId) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
       
-      if (killer.alive) {
-        killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
-        killer.kills = (killer.kills || 0) + 1;
-        killer.lengthScore += 20;
+  if (killer.alive) {
+  killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
+  killer.kills = (killer.kills || 0) + 1;
+  // ✅ FIX: Removed lengthScore gain - length only from peewees!
         
+        // ✅ Check for cashouts ONLY for player killers (not bots)
         if (!killer.isBot) {
           const cashouts = checkCashoutTiers(killer);
           
@@ -899,6 +941,7 @@ function killMarble(marble, killerId) {
             });
           }
           
+          // Send kill notification
           io.to(killer.id).emit('playerKill', {
             killerId: killer.id,
             victimId: marble.id,
@@ -921,6 +964,7 @@ function killMarble(marble, killerId) {
       }, 3000);
     }
   } else {
+    // ✅ EMIT BEFORE DELETE - send death event to victim
     io.to(marble.id).emit('playerDeath', {
       playerId: marble.id,
       killerId: killerId,
@@ -933,6 +977,7 @@ function killMarble(marble, killerId) {
       timestamp: Date.now()
     });
     
+    // ✅ DELETE AFTER event sent
     setImmediate(() => {
       delete gameState.players[marble.id];
     });
@@ -944,6 +989,7 @@ function killMarble(marble, killerId) {
     position: { x: marble.x, y: marble.y }
   });
 }
+
 // ============================================================================
 // SOCKET.IO HANDLERS (with reconciliation from Doc 14)
 // ============================================================================
@@ -988,6 +1034,11 @@ const player = {
       _lastValidX: spawnPos.x,
       _lastValidY: spawnPos.y,
       _lastAngle: 0,
+
+_lastAngle: 0,
+  lastProcessedInput: -1,  // ✅ FIX: Initialize for input reconciliation
+  // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
+
       // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
       paidTiers: new Set(),
       totalPayout: 0
@@ -1385,4 +1436,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-})
+})}
