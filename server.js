@@ -1391,4 +1391,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-});
+})}
