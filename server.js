@@ -884,14 +884,17 @@ function checkCashoutTiers(player) {
     
     console.log(`💰 CASHOUT! | Player: ${player.name} | Tier ${i}: $${tier.payout} | Total: $${player.totalPayout} | PaidTiers now: [${Array.from(player.paidTiers).join(', ')}]`);
     
-    cashoutsThisCheck.push({
+cashoutsThisCheck.push({
       tierIndex: i,
       amount: tier.payout,
       total: player.totalPayout
     });
   }
   
- function killMarble(marble, killerId) {
+  return cashoutsThisCheck;
+}
+
+function killMarble(marble, killerId) {
   if (!marble.alive) return;
   
   marble.alive = false;
@@ -1436,4 +1439,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-})}
+});
