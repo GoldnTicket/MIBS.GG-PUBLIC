@@ -278,10 +278,11 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.floor(totalValue / 30);  // ✅ Was 10, now 20 = HALF as many peewees
+  const numDrops = Math.floor(totalValue / 10);
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
+
 function findSafeSpawn(minDistance, arenaRadius) {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
   
@@ -821,23 +822,19 @@ function checkCashoutTiers(player) {
   for (let i = 0; i < tiers.length; i++) {
     const tier = tiers[i];
     
-    // Debug each tier check
     const alreadyPaid = player.paidTiers.has(i);
     const meetsThreshold = player.bounty >= tier.threshold;
     
     console.log(`  Tier ${i}: threshold=${tier.threshold}, payout=$${tier.payout}, alreadyPaid=${alreadyPaid}, meetsThreshold=${meetsThreshold}`);
     
-    // Skip if already paid or if we haven't reached threshold yet
     if (alreadyPaid || !meetsThreshold) continue;
     
-    // Skip tiers with no payout
     if (tier.payout <= 0) {
       player.paidTiers.add(i);
       console.log(`  ✅ Tier ${i} marked as paid (no payout)`);
       continue;
     }
     
-    // ✅ CASHOUT TRIGGERED!
     player.paidTiers.add(i);
     player.totalPayout += tier.payout;
     
@@ -850,7 +847,11 @@ function checkCashoutTiers(player) {
     });
   }
   
- function killMarble(marble, killerId) {
+  return cashoutsThisCheck;
+}
+
+// ✅ SEPARATE FUNCTION - NOT NESTED!
+function killMarble(marble, killerId) {
   if (!marble.alive) return;
   
   marble.alive = false;
@@ -872,7 +873,6 @@ function checkCashoutTiers(player) {
     });
   }
   
-  // Get killer info
   let killer = null;
   let killerName = 'The Arena';
   let deathType = 'wall';
@@ -885,13 +885,11 @@ function checkCashoutTiers(player) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
       
-      // ✅ ONLY modify killer if they're alive
       if (killer.alive) {
         killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
         killer.kills = (killer.kills || 0) + 1;
         killer.lengthScore += 20;
         
-        // ✅ Check for cashouts ONLY for player killers (not bots)
         if (!killer.isBot) {
           const cashouts = checkCashoutTiers(killer);
           
@@ -901,7 +899,6 @@ function checkCashoutTiers(player) {
             });
           }
           
-          // Send kill notification
           io.to(killer.id).emit('playerKill', {
             killerId: killer.id,
             victimId: marble.id,
@@ -924,7 +921,6 @@ function checkCashoutTiers(player) {
       }, 3000);
     }
   } else {
-    // ✅ EMIT BEFORE DELETE - send death event to victim
     io.to(marble.id).emit('playerDeath', {
       playerId: marble.id,
       killerId: killerId,
@@ -937,7 +933,6 @@ function checkCashoutTiers(player) {
       timestamp: Date.now()
     });
     
-    // ✅ DELETE AFTER event sent
     setImmediate(() => {
       delete gameState.players[marble.id];
     });
@@ -949,7 +944,6 @@ function checkCashoutTiers(player) {
     position: { x: marble.x, y: marble.y }
   });
 }
-
 // ============================================================================
 // SOCKET.IO HANDLERS (with reconciliation from Doc 14)
 // ============================================================================
@@ -1391,4 +1385,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-})}
+})
