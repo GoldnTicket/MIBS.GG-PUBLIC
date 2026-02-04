@@ -1351,7 +1351,6 @@ checkCoinCollisions();
   // ========================================
   // 7. MARBLE COLLISIONS
   // ========================================
-  const killedThisFrame = new Set();
 const collisionResults = checkCollisions(gameState, gameConstants);
   const victimToKiller = new Map();
   
