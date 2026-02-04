@@ -21,7 +21,7 @@ const gameConstants = require('./constants/gameConstants.json');
 const PORT = process.env.PORT || 3001;
 const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const MAX_BOTS = gameConstants.bot?.count ?? 0;
-const MAX_COINS = 200;
+const MAX_COINS = 300;
 const PLAYER_TIMEOUT = 15000;
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
@@ -295,7 +295,7 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.max(5, Math.floor(totalValue / 20));  // Minimum 5 peewees, more for bigger marbles
+  const numDrops = Math.max(5, Math.floor(totalValue / 50));  // Minimum 5 peewees, more for bigger marbles
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
