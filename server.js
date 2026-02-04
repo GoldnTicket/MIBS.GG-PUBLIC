@@ -23,6 +23,7 @@ const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const MAX_BOTS = gameConstants.bot?.count ?? 0;
 const MAX_COINS = 300;
 const PLAYER_TIMEOUT = 15000;
+const killedThisFrame = new Set(); // ✅ FIX: Track kills to prevent double-kill crash
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
 const BOT_NAMES = [
@@ -913,7 +914,14 @@ cashoutsThisCheck.push({
 }
 
 function killMarble(marble, killerId) {
-  if (!marble.alive) return;
+  if (!marble || !marble.alive) return;
+  
+  // ✅ FIX: Prevent double-kill in same frame
+  if (killedThisFrame.has(marble.id)) {
+    console.log('⚠️ Already killed this frame:', marble.id);
+    return;
+  }
+  killedThisFrame.add(marble.id);
   
   marble.alive = false;
   
@@ -1029,11 +1037,15 @@ for (let i = 0; i < coinsToSpawn; i++) {
     });
   }
   
-  io.emit('marbleDeath', {
+io.emit('marbleDeath', {
     marbleId: marble.id,
     killerId: killerId,
     position: { x: marble.x, y: marble.y }
   });
+  
+  // ✅ FIX: Immediately recalculate golden status when someone dies
+  // This prevents the "no golden marble" gap that causes issues
+  updateGoldenMarble();
 }
 
 // ============================================================================
@@ -1197,6 +1209,9 @@ let lastStatsTime = Date.now();
 setInterval(() => {
   const now = Date.now();
   const delta = now - gameState.lastUpdate;
+  
+  // ✅ FIX: Clear kill tracking for new frame
+  killedThisFrame.clear();
   gameState.lastUpdate = now;
   tickCounter++;
   frameCount++;
@@ -1409,8 +1424,11 @@ if (tickCounter % 60 === 0) {
   // ========================================
   // ✅ NEVER send PathBuffer or other class instances
   // Only send plain JSON-serializable data
+ // ✅ FIX: Only broadcast ALIVE players
   const cleanPlayers = Object.fromEntries(
-    Object.entries(gameState.players).map(([id, p]) => [
+    Object.entries(gameState.players)
+      .filter(([id, p]) => p && p.alive) // ✅ Filter dead players
+      .map(([id, p]) => [
       id,
       {
         id: p.id,
@@ -1425,23 +1443,27 @@ if (tickCounter % 60 === 0) {
         kills: p.kills,
         alive: p.alive,
         isGolden: p.isGolden,
-        lastProcessedInput: p.lastProcessedInput // ✅ For reconciliation
+        lastProcessedInput: p.lastProcessedInput
       }
     ])
   );
   
-  const cleanBots = gameState.bots.map(b => ({
-    id: b.id,
-    name: b.name,
-    marbleType: b.marbleType,
-    x: b.x,
-    y: b.y,
-    angle: b.angle,
-    lengthScore: b.lengthScore,
-    bounty: b.bounty,
-    alive: b.alive,
-    isGolden: b.isGolden
-  }));
+  // ✅ FIX: Only broadcast ALIVE bots
+  const cleanBots = gameState.bots
+    .filter(b => b && b.alive) // ✅ Filter dead bots
+    .map(b => ({
+      id: b.id,
+      name: b.name,
+      marbleType: b.marbleType,
+      x: b.x,
+      y: b.y,
+      angle: b.angle,
+      lengthScore: b.lengthScore,
+      bounty: b.bounty,
+      alive: b.alive,
+      isGolden: b.isGolden
+    }));
+  
   
 const cleanCoins = gameState.coins.map(c => ({
     id: c.id,
