@@ -52,151 +52,154 @@ const gameState = {
 };
 
 
-function updatePeeweePhysics(dt, tickCounter) {
+// ============================================================================
+// PEEWEE PHYSICS UPDATE
+// ============================================================================
+function updatePeeweePhysics(dt) {
   const friction = gameConstants.peewee?.friction || 0.92;
-  const gravity = gameConstants.peewee?.gravity || 5;
-  const bounceMultiplier = gameConstants.peewee?.bounceMultiplier || 0.8;
-  const peeweeBounceMultiplier = gameConstants.peewee?.peeweeBounceMultiplier || 0.8;
+  const gravity = gameConstants.peewee?.gravity || 15;
+  const bounceMultiplier = gameConstants.peewee?.bounceMultiplier || 0.85;
+  const peeweeBounceMultiplier = gameConstants.peewee?.peeweeBounceMultiplier || 0.90;
+  const spinVelocityThreshold = gameConstants.peewee?.spinVelocityThreshold || 15;
+  const spinSpeedMin = gameConstants.peewee?.spinSpeedMin || 0.5;
+  const spinSpeedMax = gameConstants.peewee?.spinSpeedMax || 2.5;
   
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  // ✅ Get all marbles ONCE before loop
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
+    .filter(m => m.alive);
   
   for (const peewee of gameState.coins) {
-    if (!peewee.vx) peewee.vx = 0;
-    if (!peewee.vy) peewee.vy = 0;
+    // ✅ ALWAYS apply velocity to position (THIS MAKES IT ROLL!)
+    peewee.x += peewee.vx * dt;
+    peewee.y += peewee.vy * dt;
     
+    // ✅ Apply friction
+    peewee.vx *= friction;
+    peewee.vy *= friction;
+    
+    // ✅ Apply gravity
+    peewee.vy += gravity * dt;
+    
+    // Calculate velocity magnitude
     const speed = Math.sqrt(peewee.vx * peewee.vx + peewee.vy * peewee.vy);
     
-    // Only apply physics if moving
-    if (speed > 2) {
-      peewee.x += peewee.vx * dt;
-      peewee.y += peewee.vy * dt;
-      peewee.vx *= friction;
-      peewee.vy *= friction;
-      peewee.vy += gravity * dt;
-      
-      // Spin
-      if (!peewee._spinSpeed) {
-        peewee._spinSpeed = (Math.random() * 2 + 0.5) * (Math.random() > 0.5 ? 1 : -1);
-      }
-      peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * Math.min(speed / 100, 2) * dt);
+    // ✅ ONLY SPIN WHEN ROLLING (speed above threshold)
+    if (!peewee._spinSpeed) {
+      peewee._spinSpeed = (Math.random() * (spinSpeedMax - spinSpeedMin) + spinSpeedMin) * (Math.random() > 0.5 ? 1 : -1);
     }
     
-    // Stop if very slow
-    if (speed < 2) {
+    if (speed > spinVelocityThreshold) {
+      const spinMultiplier = Math.min(speed / 100, 2.0);
+      peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
+    }
+    
+    // Stop if moving very slowly
+    if (speed < 5) {
       peewee.vx = 0;
       peewee.vy = 0;
     }
     
-    // WALL COLLISION
+    // ✅ WALL COLLISION
     const distFromCenter = Math.sqrt(peewee.x * peewee.x + peewee.y * peewee.y);
     if (distFromCenter + peewee.radius > gameConstants.arena.radius) {
       const nx = -peewee.x / distFromCenter;
       const ny = -peewee.y / distFromCenter;
+      
       const dot = peewee.vx * nx + peewee.vy * ny;
       peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
       peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+      
       const overlap = (distFromCenter + peewee.radius) - gameConstants.arena.radius;
       peewee.x -= nx * overlap;
       peewee.y -= ny * overlap;
     }
     
-    // PEEWEE-PEEWEE COLLISION (every 3rd tick, only fast new peewees)
-    if (tickCounter % 3 === 0 && speed > 20) {
-      const peeweeAge = peewee.spawnTime ? Date.now() - peewee.spawnTime : 99999;
-      if (peeweeAge < 2000) {
-        for (const other of gameState.coins) {
-          if (other === peewee) continue;
-          const dx = other.x - peewee.x;
-          const dy = other.y - peewee.y;
-          const distSq = dx * dx + dy * dy;
-          const minDist = peewee.radius + other.radius;
-          
-          if (distSq < minDist * minDist && distSq > 1) {
-            const dist = Math.sqrt(distSq);
-            const nx = dx / dist;
-            const ny = dy / dist;
-            const tempVx = peewee.vx;
-            const tempVy = peewee.vy;
-            peewee.vx = (other.vx || 0) * peeweeBounceMultiplier;
-            peewee.vy = (other.vy || 0) * peeweeBounceMultiplier;
-            other.vx = tempVx * peeweeBounceMultiplier;
-            other.vy = tempVy * peeweeBounceMultiplier;
-            const overlap = minDist - dist;
-            peewee.x -= nx * (overlap / 2);
-            peewee.y -= ny * (overlap / 2);
-            other.x += nx * (overlap / 2);
-            other.y += ny * (overlap / 2);
-          }
-        }
+    // ✅ PEEWEE-PEEWEE COLLISION
+   /* for (const other of gameState.coins) {
+      if (other === peewee) continue;
+      
+      const dx = other.x - peewee.x;
+      const dy = other.y - peewee.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = peewee.radius + other.radius;
+      
+      if (dist < minDist && dist > 0) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        
+        const tempVx = peewee.vx;
+        const tempVy = peewee.vy;
+        peewee.vx = other.vx * peeweeBounceMultiplier;
+        peewee.vy = other.vy * peeweeBounceMultiplier;
+        other.vx = tempVx * peeweeBounceMultiplier;
+        other.vy = tempVy * peeweeBounceMultiplier;
+        
+        const overlap = minDist - dist;
+        peewee.x -= nx * (overlap / 2);
+        peewee.y -= ny * (overlap / 2);
+        other.x += nx * (overlap / 2);
+        other.y += ny * (overlap / 2);
       }
     }
-    
-    // MARBLE COLLISION - check head and all body segments
+   */ 
+    // ✅ MARBLE COLLISION (bounce off player/bot marbles)
     for (const marble of allMarbles) {
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
-      const peeweeRadius = peewee.radius || 50;
       
-      // CHECK HEAD (back half only - front gets suctioned)
-      const hx = peewee.x - marble.x;
-      const hy = peewee.y - marble.y;
-      const headDistSq = hx * hx + hy * hy;
-      const headCollisionDist = marbleRadius + peeweeRadius;
+      // Check HEAD collision
+      const dx = peewee.x - marble.x;
+      const dy = peewee.y - marble.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
       
-      if (headDistSq < headCollisionDist * headCollisionDist && headDistSq > 1) {
-        const angleToPeewee = Math.atan2(hy, hx);
-        const angleDiff = Math.abs(wrapAngle(angleToPeewee - marble.angle));
+      if (dist < marbleRadius + peewee.radius && dist > 0) {
+        // Bounce off head
+        const nx = dx / dist;
+        const ny = dy / dist;
         
-        // Back half only (angle > 90 degrees from facing)
-        if (angleDiff > Math.PI / 2) {
-          const headDist = Math.sqrt(headDistSq);
-          const nx = hx / headDist;
-          const ny = hy / headDist;
-          const dot = peewee.vx * nx + peewee.vy * ny;
-          if (dot < 0) { // Only bounce if moving toward marble
-            peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
-            peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
-          }
-          const overlap = headCollisionDist - headDist;
-          if (overlap > 0) {
-            peewee.x += nx * overlap * 1.1;
-            peewee.y += ny * overlap * 1.1;
-          }
-          continue; // Skip body check
-        }
+        const dot = peewee.vx * nx + peewee.vy * ny;
+        peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
+        peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+        
+        // Push out
+        const overlap = (marbleRadius + peewee.radius) - dist;
+        peewee.x += nx * overlap;
+        peewee.y += ny * overlap;
+        
+        continue; // Skip body check if hit head
       }
       
-      // CHECK BODY SEGMENTS
+      // Check BODY SEGMENT collisions
+// Check BODY SEGMENT collisions (only check nearby segments for performance)
       if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
-        const segmentSpacing = 12;
+        const segmentSpacing = 20;
         const bodyLength = marble.lengthScore * 2;
-        const numSegments = Math.min(Math.floor(bodyLength / segmentSpacing), 60);
-        const segmentRadius = marbleRadius * 0.85;
-        const segCollisionDist = segmentRadius + peeweeRadius;
-        const segCollisionDistSq = segCollisionDist * segCollisionDist;
+        const numSegments = Math.floor(bodyLength / segmentSpacing);
         
-        for (let segIdx = 1; segIdx <= numSegments; segIdx++) {
+        // ✅ Only check first 10 segments for performance
+        for (let segIdx = 1; segIdx <= Math.min(numSegments, 10); segIdx++) {
           const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
-          if (!sample) continue;
           
-          const sx = peewee.x - sample.x;
-          const sy = peewee.y - sample.y;
-          const segDistSq = sx * sx + sy * sy;
+          const segDx = peewee.x - sample.x;
+          const segDy = peewee.y - sample.y;
+          const segDist = Math.sqrt(segDx * segDx + segDy * segDy);
           
-          if (segDistSq < segCollisionDistSq && segDistSq > 1) {
-            const segDist = Math.sqrt(segDistSq);
-            const nx = sx / segDist;
-            const ny = sy / segDist;
+          const segmentRadius = marbleRadius * 0.9;
+          
+          if (segDist < segmentRadius + peewee.radius && segDist > 0) {
+            // Bounce off segment
+            const nx = segDx / segDist;
+            const ny = segDy / segDist;
+            
             const dot = peewee.vx * nx + peewee.vy * ny;
-            if (dot < 0) { // Only bounce if moving toward segment
-              peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
-              peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
-            }
-            const overlap = segCollisionDist - segDist;
-            if (overlap > 0) {
-              peewee.x += nx * overlap * 1.1;
-              peewee.y += ny * overlap * 1.1;
-            }
-            break;
+            peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
+            peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+            
+            // Push out
+            const overlap = (segmentRadius + peewee.radius) - segDist;
+            peewee.x += nx * overlap;
+            peewee.y += ny * overlap;
+            
+            break; // Only bounce once per marble
           }
         }
       }
@@ -243,25 +246,7 @@ class SpatialGrid {
       }
     }
   }
-getNearby(x, y, radius) {
-    const results = [];
-    const cellRadius = Math.ceil(radius / this.cellSize);
-    const centerCellX = Math.floor(x / this.cellSize);
-    const centerCellY = Math.floor(y / this.cellSize);
-    
-    for (let dx = -cellRadius; dx <= cellRadius; dx++) {
-      for (let dy = -cellRadius; dy <= cellRadius; dy++) {
-        const key = `${centerCellX + dx},${centerCellY + dy}`;
-        const cell = this.grid.get(key);
-        if (cell) results.push(...cell);
-      }
-    }
-    return results;
-  }
-
-  
 }
-
 
 
 
@@ -561,7 +546,6 @@ function checkCollisions(gameState, C) {
       }
     }
   }
-
   
   // Remove duplicates
   const uniqueDeaths = new Map();
@@ -791,7 +775,7 @@ function spawnCoin() {
   const max = gameConstants.peewee?.initialRollSpeedMax || 180;
   const rollSpeed = min + Math.random() * (max - min);
   
-const coin = {
+  const coin = {
     id: `coin_${Date.now()}_${Math.random()}`,
     x: Math.cos(angle) * distance,
     y: Math.sin(angle) * distance,
@@ -801,8 +785,7 @@ const coin = {
     mass: gameConstants.peewee?.mass || 2.0,
     growthValue: gameConstants.peewee?.growthValue || 20,
     friction: gameConstants.peewee?.friction || 0.92,
-    marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)],
-    spawnTime: Date.now()
+    marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)]
   };
   
   gameState.coins.push(coin);
@@ -1295,7 +1278,8 @@ setInterval(() => {
 // ========================================
   // 4. UPDATE PEEWEE PHYSICS
   // ========================================
-updatePeeweePhysics(dt, tickCounter);  
+  updatePeeweePhysics(dt);  // ✅ Use dt (already in seconds)
+  
 
   
   // ========================================
@@ -1464,4 +1448,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-})
+});
