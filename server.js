@@ -68,10 +68,27 @@ function updatePeeweePhysics(dt) {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
     .filter(m => m.alive);
   
-  for (const peewee of gameState.coins) {
+for (const peewee of gameState.coins) {
+    // Random curve drift (each peewee curves slightly different)
+    if (!peewee._curve) {
+      peewee._curve = (Math.random() - 0.5) * 0.02;
+    }
+    
+    // Apply curve to velocity (rotate direction slightly)
+    if (Math.abs(peewee.vx) > 2 || Math.abs(peewee.vy) > 2) {
+      const cos = Math.cos(peewee._curve);
+      const sin = Math.sin(peewee._curve);
+      const newVx = peewee.vx * cos - peewee.vy * sin;
+      const newVy = peewee.vx * sin + peewee.vy * cos;
+      peewee.vx = newVx;
+      peewee.vy = newVy;
+    }
+    
     // ✅ ALWAYS apply velocity to position (THIS MAKES IT ROLL!)
     peewee.x += peewee.vx * dt;
     peewee.y += peewee.vy * dt;
+    
+
     
     // ✅ Apply friction
     peewee.vx *= friction;
