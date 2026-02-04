@@ -26,7 +26,7 @@ const PLAYER_TIMEOUT = 15000;
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
 const BOT_NAMES = [
-  'OG MIBSTER', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
+  'Og', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
   'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
 ];
 
@@ -226,7 +226,8 @@ function updatePeeweePhysics(dt) {
         }
       }
     }
-}
+  
+
 
 // ============================================================================
 // SPATIAL GRID (from Doc 15)
@@ -567,6 +568,7 @@ function checkCollisions(gameState, C) {
       }
     }
   }
+}
   
   // Remove duplicates
   const uniqueDeaths = new Map();
