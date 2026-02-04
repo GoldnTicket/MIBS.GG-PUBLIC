@@ -14,7 +14,7 @@ const socketIO = require('socket.io');
 const { wrapAngle, calculateMarbleRadius, calculateTurnStep } = require('./shared/physics.server.js');
 const PathBuffer = require('./shared/PathBuffer.server.js');
 const gameConstants = require('./constants/gameConstants.json');
-
+const killedThisFrame = new Set(); // ✅ FIX: Track kills to prevent double-kill crash
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -23,7 +23,7 @@ const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const MAX_BOTS = gameConstants.bot?.count ?? 0;
 const MAX_COINS = 300;
 const PLAYER_TIMEOUT = 15000;
-const killedThisFrame = new Set(); // ✅ FIX: Track kills to prevent double-kill crash
+
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
 const BOT_NAMES = [
