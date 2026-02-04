@@ -37,7 +37,7 @@ const MARBLE_TYPES = Object.values(gameConstants.pickupThemes || {})
 
 // Fallback if no themes defined
 if (MARBLE_TYPES.length === 0) {
-  MARBLE_TYPES.push('GALAXY1', 'FRANCE1', 'USA1', 'AUSSIE FLAG', 'POISON FROG', 'PEARLYWHITE');
+  MARBLE_TYPES.push('GALAXY1', 'FRANCE1', 'USA1', 'AUSSIEFLAG');
 }
 
 
