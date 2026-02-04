@@ -26,7 +26,7 @@ const PLAYER_TIMEOUT = 15000;
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
 
 const BOT_NAMES = [
-  'OG Mibster', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
+  'OG MIBSTER', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
   'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
 ];
 
@@ -151,7 +151,7 @@ function updatePeeweePhysics(dt) {
         }
       }
     }
-
+  }
 
     // ✅ MARBLE COLLISION (optimized + back-half head bounce)
     for (const marble of allMarbles) {
@@ -1470,4 +1470,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-})}
+})
