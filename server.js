@@ -1395,6 +1395,22 @@ if (tickCounter % 60 === 0) {
   // ========================================
   // 10. STALE PLAYER CLEANUP
   // ========================================
+  
+  
+  
+  // ✅ FIX: Clean up ghost bots every tick
+  gameState.bots = gameState.bots.filter(bot => {
+    if (!bot || !bot.alive) {
+      console.log(`🧹 Removing dead/null bot: ${bot?.id || 'null'}`);
+      return false;
+    }
+    if (bot.x === undefined || bot.y === undefined || isNaN(bot.x) || isNaN(bot.y)) {
+      console.log(`🧹 Removing invalid bot: ${bot.id}`);
+      return false;
+    }
+    return true;
+  });
+  
   Object.keys(gameState.players).forEach(playerId => {
     const player = gameState.players[playerId];
     if (now - player.lastUpdate > PLAYER_TIMEOUT) {
