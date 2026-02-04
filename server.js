@@ -171,7 +171,7 @@ function checkRateLimit(socketId, action) {
 // ============================================================================
 const MAX_BOTS = gameConstants.bot.count || 0;
 const MAX_COINS = 200;
-const TICK_RATE = 1000 / 120;
+const TICK_RATE = 1000 / 60;  // ✅ 60 FPS
 const SPATIAL_GRID_SIZE = gameConstants.collision.gridSizePx || 64;
 const BOT_NAMES = [
   'RollerPro', 'SpinMaster', 'MarbleKing', 'SphereHero', 'BounceBot',
@@ -686,8 +686,8 @@ setInterval(() => {
   tickCounter++;
   frameCount++;
   
-  if (frameCount % 600 === 0) {
-    const actualFPS = 600 / ((now - lastStatsTime) / 1000);
+  if (frameCount % 300 === 0) {  // Every 5 seconds at 60 FPS
+    const actualFPS = 300 / ((now - lastStatsTime) / 1000);
     console.log(`📊 Server Stats: FPS=${actualFPS.toFixed(1)} | Players=${Object.keys(gameState.players).length} | Bots=${gameState.bots.length} | Coins=${gameState.coins.length}`);
     lastStatsTime = now;
   }
