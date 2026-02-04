@@ -1,3 +1,4 @@
+
 {
   "version": "3.1.0-clean",
   
@@ -216,18 +217,16 @@
   "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true},
   "USA1": {"key": "USA1", "isShooter": true},
   "FRANCE1": {"key": "FRANCE1", "isShooter": true},
-  "POISON FROG": {"key": "POISON FROG", "isShooter": true},
   "BANANASWIRL": {"key": "BANANASWIRL", "isShooter": true},
   "BLUEMOON": {"key": "BLUEMOON", "isShooter": true},
   "CANADA": {"key": "CANADA", "isShooter": true},
   "CATSEYEBLUEYELLOW": {"key": "CATSEYEBLUEYELLOW", "isShooter": true},
-  "CATSEYE GREENBLUE": {"key": "CATSEYE GREENBLUE", "isShooter": true},
+  "CATSEYEGREENBLUE": {"key": "CATSEYE GREENBLUE", "isShooter": true},
   "CATSEYEGREENORANGE": {"key": "CATSEYEGREENORANGE", "isShooter": true},
   "CHINA": {"key": "CHINA", "isShooter": true},
-  "GOLDEN MIB": {"key": "GOLDEN MIB", "isShooter": true},
+  "GOLDENMIB": {"key": "GOLDEN MIB", "isShooter": true},
   "KOIFISH": {"key": "KOIFISH", "isShooter": true},
   "STARDUSTGREEN": {"key": "STARDUSTGREEN", "isShooter": true},
-  "SUNSET": {"key": "SUNSET", "isShooter": true},
   "UNICORN": {"key": "UNICORN", "isShooter": true}
 }
 }
