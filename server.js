@@ -295,7 +295,7 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.max(5, Math.floor(totalValue / 10));  // Minimum 5 peewees, more for bigger marbles
+  const numDrops = Math.max(5, Math.floor(totalValue / 20));  // Minimum 5 peewees, more for bigger marbles
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
@@ -924,21 +924,36 @@ const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.len
   console.log(`💀 DEATH DROP: ${marble.name} | lengthScore=${marble.lengthScore} | totalValue=${dropInfo.totalValue} | spawning ${coinsToSpawn} peewees`);
 
 for (let i = 0; i < coinsToSpawn; i++) {
-    const angle = (i / coinsToSpawn) * Math.PI * 2;
-    const distance = 50 + Math.random() * 100;
-    const explodeSpeed = 150 + Math.random() * 100;
+    // Distribute along the body, not just at head
+    let spawnX = marble.x;
+    let spawnY = marble.y;
+    
+    if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+      const bodyLength = marble.lengthScore * 2;
+      const distanceAlong = (i / coinsToSpawn) * bodyLength;
+      const sample = marble.pathBuffer.sampleBack(distanceAlong);
+      if (sample) {
+        spawnX = sample.x;
+        spawnY = sample.y;
+      }
+    }
+    
+    // Random explosion direction from each segment
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 20 + Math.random() * 40;
+    const explodeSpeed = 100 + Math.random() * 80;
     
     gameState.coins.push({
       id: `coin_${Date.now()}_${Math.random()}_${i}`,
-      x: marble.x + Math.cos(angle) * distance,
-      y: marble.y + Math.sin(angle) * distance,
+      x: spawnX + Math.cos(angle) * distance,
+      y: spawnY + Math.sin(angle) * distance,
       vx: Math.cos(angle) * explodeSpeed,
       vy: Math.sin(angle) * explodeSpeed,
       growthValue: Math.floor(dropDist.valuePerDrop) || 5,
       radius: gameConstants.peewee?.radius || 50,
       mass: gameConstants.peewee?.mass || 2.0,
       friction: gameConstants.peewee?.friction || 0.92,
-marbleType: marble.marbleType || 'GALAXY1',
+      marbleType: marble.marbleType || 'GALAXY1',
       rotation: 0,
       spawnTime: Date.now()
     });
