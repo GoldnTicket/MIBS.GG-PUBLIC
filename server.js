@@ -785,7 +785,8 @@ function spawnCoin() {
     mass: gameConstants.peewee?.mass || 2.0,
     growthValue: gameConstants.peewee?.growthValue || 20,
     friction: gameConstants.peewee?.friction || 0.92,
-    marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)]
+marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)],
+    spawnTime: Date.now()
   };
   
   gameState.coins.push(coin);
@@ -920,8 +921,9 @@ for (let i = 0; i < coinsToSpawn; i++) {
       radius: gameConstants.peewee?.radius || 50,
       mass: gameConstants.peewee?.mass || 2.0,
       friction: gameConstants.peewee?.friction || 0.92,
-      marbleType: marble.marbleType || 'GALAXY1',
-      rotation: 0
+marbleType: marble.marbleType || 'GALAXY1',
+      rotation: 0,
+      spawnTime: Date.now()
     });
   }
   
