@@ -153,9 +153,27 @@ function updatePeeweePhysics(dt, tickCounter) {
     for (const marble of nearbyMarbles) {
       if (!marble.alive || marble.isSegment) continue;
       
-      const roughDist = Math.abs(peewee.x - marble.x) + Math.abs(peewee.y - marble.y);
-      const maxBodyLength = marble.lengthScore * 2.5;
-      if (roughDist > maxBodyLength + 100) continue;
+   // Check proximity to HEAD first
+      const headDist = Math.abs(peewee.x - marble.x) + Math.abs(peewee.y - marble.y);
+      let isNearBody = headDist < 300;
+      
+      // If not near head, check every 3rd segment along body
+      if (!isNearBody && marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+        const checkSpacing = 60; // Check every 60px along body
+        const bodyLength = marble.lengthScore * 2;
+        const numChecks = Math.min(Math.floor(bodyLength / checkSpacing), 20);
+        
+        for (let i = 1; i <= numChecks; i++) {
+          const sample = marble.pathBuffer.sampleBack(i * checkSpacing);
+          const segDist = Math.abs(peewee.x - sample.x) + Math.abs(peewee.y - sample.y);
+          if (segDist < 150) {
+            isNearBody = true;
+            break;
+          }
+        }
+      }
+      
+      if (!isNearBody) continue;
       
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
       let bounced = false;
