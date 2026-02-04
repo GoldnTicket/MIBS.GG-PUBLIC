@@ -114,79 +114,102 @@ function updatePeeweePhysics(dt) {
       peewee.y -= ny * overlap;
     }
     
-    // ✅ PEEWEE-PEEWEE COLLISION
-   /* for (const other of gameState.coins) {
-      if (other === peewee) continue;
-      
-      const dx = other.x - peewee.x;
-      const dy = other.y - peewee.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const minDist = peewee.radius + other.radius;
-      
-      if (dist < minDist && dist > 0) {
-        const nx = dx / dist;
-        const ny = dy / dist;
+// ✅ PEEWEE-PEEWEE COLLISION (optimized: only new + fast peewees)
+    const peeweeAge = peewee.spawnTime ? Date.now() - peewee.spawnTime : 99999;
+    const isNewAndFast = peeweeAge < 2500 && speed > 25;
+    
+    if (isNewAndFast) {
+      for (const other of gameState.coins) {
+        if (other === peewee) continue;
         
-        const tempVx = peewee.vx;
-        const tempVy = peewee.vy;
-        peewee.vx = other.vx * peeweeBounceMultiplier;
-        peewee.vy = other.vy * peeweeBounceMultiplier;
-        other.vx = tempVx * peeweeBounceMultiplier;
-        other.vy = tempVy * peeweeBounceMultiplier;
+        // Skip collision with old/slow peewees
+        const otherAge = other.spawnTime ? Date.now() - other.spawnTime : 99999;
+        const otherSpeed = Math.sqrt((other.vx || 0) * (other.vx || 0) + (other.vy || 0) * (other.vy || 0));
+        if (otherAge > 2500 && otherSpeed < 25) continue;
         
-        const overlap = minDist - dist;
-        peewee.x -= nx * (overlap / 2);
-        peewee.y -= ny * (overlap / 2);
-        other.x += nx * (overlap / 2);
-        other.y += ny * (overlap / 2);
+        const dx = other.x - peewee.x;
+        const dy = other.y - peewee.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const minDist = peewee.radius + other.radius;
+        
+        if (dist < minDist && dist > 0) {
+          const nx = dx / dist;
+          const ny = dy / dist;
+          
+          const tempVx = peewee.vx;
+          const tempVy = peewee.vy;
+          peewee.vx = other.vx * peeweeBounceMultiplier;
+          peewee.vy = other.vy * peeweeBounceMultiplier;
+          other.vx = tempVx * peeweeBounceMultiplier;
+          other.vy = tempVy * peeweeBounceMultiplier;
+          
+          const overlap = minDist - dist;
+          peewee.x -= nx * (overlap / 2);
+          peewee.y -= ny * (overlap / 2);
+          other.x += nx * (overlap / 2);
+          other.y += ny * (overlap / 2);
+        }
       }
     }
-   */ 
-    // ✅ MARBLE COLLISION (bounce off player/bot marbles)
+
+
+    // ✅ MARBLE COLLISION (optimized + back-half head bounce)
     for (const marble of allMarbles) {
-      const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+      // CHEAP CHECK: Skip if peewee is far from marble (Manhattan distance)
+      const roughDist = Math.abs(peewee.x - marble.x) + Math.abs(peewee.y - marble.y);
+      const maxBodyLength = marble.lengthScore * 2.5;
+      if (roughDist > maxBodyLength + 100) continue;
       
-      // Check HEAD collision
+      const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
+      let bounced = false;
+      
+      // Check HEAD collision (back half only - front half gets suctioned)
       const dx = peewee.x - marble.x;
       const dy = peewee.y - marble.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
       if (dist < marbleRadius + peewee.radius && dist > 0) {
-        // Bounce off head
-        const nx = dx / dist;
-        const ny = dy / dist;
+        // Check if peewee is in BACK HALF of marble head
+        const angleToPeewee = Math.atan2(dy, dx);
+        const angleDiff = Math.abs(wrapAngle(angleToPeewee - marble.angle));
         
-        const dot = peewee.vx * nx + peewee.vy * ny;
-        peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
-        peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
-        
-        // Push out
-        const overlap = (marbleRadius + peewee.radius) - dist;
-        peewee.x += nx * overlap;
-        peewee.y += ny * overlap;
-        
-        continue; // Skip body check if hit head
+        // If angle > 90 degrees from facing direction, it's the back half
+        if (angleDiff > Math.PI / 2) {
+          const nx = dx / dist;
+          const ny = dy / dist;
+          
+          const dot = peewee.vx * nx + peewee.vy * ny;
+          peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
+          peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
+          
+          const overlap = (marbleRadius + peewee.radius) - dist;
+          peewee.x += nx * overlap;
+          peewee.y += ny * overlap;
+          
+          bounced = true;
+        }
+        // Front half: don't bounce, let suction handle it
       }
       
-      // Check BODY SEGMENT collisions
-// Check BODY SEGMENT collisions (only check nearby segments for performance)
-      if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
-        const segmentSpacing = 20;
+      // Check ALL BODY SEGMENTS (only if didn't hit head)
+      if (!bounced && marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+        const segmentSpacing = 15;
         const bodyLength = marble.lengthScore * 2;
         const numSegments = Math.floor(bodyLength / segmentSpacing);
+        const segmentRadius = marbleRadius * 0.9;
+        const collisionDist = segmentRadius + peewee.radius;
         
-        // ✅ Only check first 10 segments for performance
-        for (let segIdx = 1; segIdx <= Math.min(numSegments, 10); segIdx++) {
+        for (let segIdx = 1; segIdx <= numSegments; segIdx++) {
           const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
           
+          // Quick check before sqrt
           const segDx = peewee.x - sample.x;
           const segDy = peewee.y - sample.y;
+          if (Math.abs(segDx) > collisionDist || Math.abs(segDy) > collisionDist) continue;
+          
           const segDist = Math.sqrt(segDx * segDx + segDy * segDy);
           
-          const segmentRadius = marbleRadius * 0.9;
-          
-          if (segDist < segmentRadius + peewee.radius && segDist > 0) {
-            // Bounce off segment
+          if (segDist < collisionDist && segDist > 0) {
             const nx = segDx / segDist;
             const ny = segDy / segDist;
             
@@ -194,17 +217,15 @@ function updatePeeweePhysics(dt) {
             peewee.vx = (peewee.vx - 2 * dot * nx) * bounceMultiplier;
             peewee.vy = (peewee.vy - 2 * dot * ny) * bounceMultiplier;
             
-            // Push out
-            const overlap = (segmentRadius + peewee.radius) - segDist;
+            const overlap = collisionDist - segDist;
             peewee.x += nx * overlap;
             peewee.y += ny * overlap;
             
-            break; // Only bounce once per marble
+            break;
           }
         }
       }
     }
-  }
 }
 
 // ============================================================================
@@ -775,7 +796,7 @@ function spawnCoin() {
   const max = gameConstants.peewee?.initialRollSpeedMax || 180;
   const rollSpeed = min + Math.random() * (max - min);
   
-  const coin = {
+const coin = {
     id: `coin_${Date.now()}_${Math.random()}`,
     x: Math.cos(angle) * distance,
     y: Math.sin(angle) * distance,
@@ -785,7 +806,8 @@ function spawnCoin() {
     mass: gameConstants.peewee?.mass || 2.0,
     growthValue: gameConstants.peewee?.growthValue || 20,
     friction: gameConstants.peewee?.friction || 0.92,
-    marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)]
+    marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)],
+    spawnTime: Date.now()
   };
   
   gameState.coins.push(coin);
@@ -1448,4 +1470,4 @@ server.listen(PORT, () => {
 
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
-});
+})}
