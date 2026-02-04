@@ -115,7 +115,7 @@ function updatePeeweePhysics(dt) {
     }
     
     // ✅ PEEWEE-PEEWEE COLLISION
-   /* for (const other of gameState.coins) {
+    for (const other of gameState.coins) {
       if (other === peewee) continue;
       
       const dx = other.x - peewee.x;
@@ -141,7 +141,7 @@ function updatePeeweePhysics(dt) {
         other.y += ny * (overlap / 2);
       }
     }
-   */ 
+    
     // ✅ MARBLE COLLISION (bounce off player/bot marbles)
     for (const marble of allMarbles) {
       const marbleRadius = calculateMarbleRadius(marble.lengthScore, gameConstants);
