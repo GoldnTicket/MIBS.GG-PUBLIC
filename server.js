@@ -951,17 +951,17 @@ for (let i = 0; i < coinsToSpawn; i++) {
     const distance = 20 + Math.random() * 40;
     const explodeSpeed = 100 + Math.random() * 80;
     
-    gameState.coins.push({
-      id: `coin_${Date.now()}_${Math.random()}_${i}`,
-      x: spawnX + Math.cos(angle) * distance,
-      y: spawnY + Math.sin(angle) * distance,
-      vx: Math.cos(angle) * explodeSpeed,
-      vy: Math.sin(angle) * explodeSpeed,
-      growthValue: Math.floor(dropDist.valuePerDrop) || 5,
-      radius: gameConstants.peewee?.radius || 50,
-      mass: gameConstants.peewee?.mass || 2.0,
-      friction: gameConstants.peewee?.friction || 0.92,
-      marbleType: marble.marbleType || 'GALAXY1',
+  gameState.coins.push({
+  id: `coin_${Date.now()}_${Math.random()}_${i}`,
+  x: spawnX + Math.cos(angle) * distance,
+  y: spawnY + Math.sin(angle) * distance,
+  vx: Math.cos(angle) * explodeSpeed,
+  vy: Math.sin(angle) * explodeSpeed,
+  growthValue: Math.floor(dropDist.valuePerDrop) || 5,
+  radius: gameConstants.peewee?.radius || 50,
+  mass: gameConstants.peewee?.mass || 2.0,
+  friction: gameConstants.peewee?.friction || 0.92,
+  marbleType: marble.isGolden ? 'GOLDEN MIB' : (marble.marbleType || 'GALAXY1'),
       rotation: 0,
       spawnTime: Date.now()
     });
@@ -1017,25 +1017,23 @@ for (let i = 0; i < coinsToSpawn; i++) {
         }
       }, 3000);
     }
-  } else {
-    // ✅ EMIT BEFORE DELETE - send death event to victim
-    io.to(marble.id).emit('playerDeath', {
-      playerId: marble.id,
-      killerId: killerId,
-      killerName: killerName,
-      deathType: deathType,
-      bountyLost: dropInfo.bountyValue,
-      x: marble.x,
-      y: marble.y,
-      marbleType: marble.marbleType,
-      timestamp: Date.now()
-    });
-    
-    // ✅ DELETE AFTER event sent
-    setImmediate(() => {
-      delete gameState.players[marble.id];
-    });
-  }
+} else {
+  // ✅ EMIT death event to victim
+  io.to(marble.id).emit('playerDeath', {
+    playerId: marble.id,
+    killerId: killerId,
+    killerName: killerName,
+    deathType: deathType,
+    bountyLost: dropInfo.bountyValue,
+    x: marble.x,
+    y: marble.y,
+    marbleType: marble.marbleType,
+    timestamp: Date.now()
+  });
+  
+  // ✅ FIX: DELETE IMMEDIATELY - no setImmediate delay!
+  delete gameState.players[marble.id];
+}
   
 io.emit('marbleDeath', {
     marbleId: marble.id,
@@ -1390,6 +1388,27 @@ if (tickCounter % 60 === 0) {
     const coinsToSpawn = MAX_COINS - gameState.coins.length;
     for(let i = 0; i < Math.min(coinsToSpawn, 10); i++) spawnCoin();
   }
+
+
+// ========================================
+// 9.5. GHOST MARBLE CLEANUP (Memory Leak Fix)
+// ========================================
+// Remove any dead players that weren't properly cleaned up
+Object.keys(gameState.players).forEach(playerId => {
+  const player = gameState.players[playerId];
+  if (player && !player.alive) {
+    console.log(`🧹 Cleaning up ghost player: ${playerId}`);
+    delete gameState.players[playerId];
+  }
+});
+
+// Remove any dead bots that weren't properly cleaned up
+for (let i = gameState.bots.length - 1; i >= 0; i--) {
+  if (!gameState.bots[i].alive) {
+    console.log(`🧹 Cleaning up ghost bot: ${gameState.bots[i].id}`);
+    gameState.bots.splice(i, 1);
+  }
+}
 
 
   // ========================================
