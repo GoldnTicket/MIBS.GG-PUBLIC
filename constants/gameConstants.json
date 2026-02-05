@@ -21,7 +21,7 @@
 "player": {
   "startLength": 200,
   "startBounty": 1,
-  "widthVsLengthMult": 5.0,
+  "widthVsLengthMult": 8.0,
   "startRadius": 30
 },
   
@@ -68,7 +68,7 @@
   },
   
   "collision": {
-    "dropValueMultiplier": 1.0,
+    "dropValueMultiplier": 0.20,
     "gridSizePx": 64
   },
   
@@ -104,8 +104,8 @@
   },
   
   "zoom": {
-    "max": 1.0,
-    "min": 0.505,
+    "max": 1.1,
+    "min": 0.80,
     "scoreAtMin": 2000,
     "lerpPer60": 0.55,
     "progressExponent": 5.5
