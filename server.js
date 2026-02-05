@@ -961,7 +961,7 @@ for (let i = 0; i < coinsToSpawn; i++) {
   radius: gameConstants.peewee?.radius || 50,
   mass: gameConstants.peewee?.mass || 2.0,
   friction: gameConstants.peewee?.friction || 0.92,
-  marbleType: marble.isGolden ? 'GOLDEN MIB' : (marble.marbleType || 'GALAXY1'),
+  marbleType: marble.isGolden ? 'GOLDENMIB' : (marble.marbleType || 'GALAXY1'),
       rotation: 0,
       spawnTime: Date.now()
     });
