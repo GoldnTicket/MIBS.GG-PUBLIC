@@ -31,6 +31,14 @@ const BOT_NAMES = [
   'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
 ];
 
+// ✅ Bot-only marble types (catseye marbles)
+const BOT_MARBLE_TYPES = [
+  'CATSEYE BLUEYELLOW',
+  'CATSEYE GREENBLUE',
+  'CATSEYE GREENORANGE'
+];
+
+// ✅ All marble types for players
 const MARBLE_TYPES = Object.values(gameConstants.pickupThemes || {})
   .filter(theme => theme.isShooter)
   .map(theme => theme.key);
@@ -739,8 +747,7 @@ function spawnBot(id) {
   const bot = {
     id,
     name: BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)] + Math.floor(Math.random() * 100),
-    marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)],
-    x: spawnPos.x,
+marbleType: BOT_MARBLE_TYPES[Math.floor(Math.random() * BOT_MARBLE_TYPES.length)],    x: spawnPos.x,
     y: spawnPos.y,
     angle: Math.random() * Math.PI * 2,
     targetAngle: Math.random() * Math.PI * 2,
