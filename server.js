@@ -961,7 +961,7 @@ for (let i = 0; i < coinsToSpawn; i++) {
   radius: gameConstants.peewee?.radius || 50,
   mass: gameConstants.peewee?.mass || 2.0,
   friction: gameConstants.peewee?.friction || 0.92,
-  marbleType: marble.isGolden ? 'GOLDEN' : (marble.marbleType || 'GALAXY1'),
+  marbleType: marble.isGolden ? 'GOLDEN MIB' : (marble.marbleType || 'GALAXY1'),
       rotation: 0,
       spawnTime: Date.now()
     });
@@ -985,24 +985,22 @@ for (let i = 0; i < coinsToSpawn; i++) {
   killer.kills = (killer.kills || 0) + 1;
   // ✅ FIX: Removed lengthScore gain - length only from peewees!
         
-        // ✅ Check for cashouts ONLY for player killers (not bots)
-        if (!killer.isBot) {
-          const cashouts = checkCashoutTiers(killer);
-          
-          if (cashouts && cashouts.length > 0) {
-            cashouts.forEach(cashout => {
-              io.to(killer.id).emit('cashout', cashout);
-            });
-          }
-          
-          // Send kill notification
-          io.to(killer.id).emit('playerKill', {
-            killerId: killer.id,
-            victimId: marble.id,
-            victimName: marble.name || 'Player',
-            bountyGained: dropInfo.bountyValue
-          });
-        }
+     
+const cashouts = checkCashoutTiers(killer);
+
+if (cashouts && cashouts.length > 0) {
+  // ✅ Aggregate all tier payouts into ONE notification
+  const totalAmount = cashouts.reduce((sum, c) => sum + c.amount, 0);
+  
+  io.to(killer.id).emit('cashout', {
+    amount: totalAmount,
+    total: killer.totalPayout,
+    tiersCrossed: cashouts.length
+  });
+}
+
+
+      
       }
     }
   }
