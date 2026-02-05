@@ -33,9 +33,9 @@ const BOT_NAMES = [
 
 // ✅ Bot-only marble types (catseye marbles)
 const BOT_MARBLE_TYPES = [
-  'CATSEYE BLUEYELLOW',
-  'CATSEYE GREENBLUE',
-  'CATSEYE GREENORANGE'
+  'CATSEYEBLUEYELLOW',
+  'CATSEYEGREENBLUE',
+  'CATSEYEGREENORANGE'
 ];
 
 // ✅ All marble types for players
