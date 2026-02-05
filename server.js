@@ -487,7 +487,7 @@ function checkCollisions(gameState, C) {
       const dy = other.y - marble.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      if (dist < (headRadius + otherHeadRadius) * 0.85) {
+      if (dist < (headRadius + otherHeadRadius) * 0.60) {
         // HEAD-to-HEAD: Use angle comparison
       // HEAD-to-HEAD: Use angle comparison
         const collisionX = (marble.x + other.x) / 2;
@@ -552,7 +552,7 @@ function checkCollisions(gameState, C) {
           
           const segmentRadius = otherHeadRadius * 0.9;
           
-          if (segDist < (headRadius + segmentRadius) * 0.85) {
+          if (segDist < (headRadius + segmentRadius) * 0.60) {
        results.push({ 
               killerId: other.id,
               victimId: marble.id
