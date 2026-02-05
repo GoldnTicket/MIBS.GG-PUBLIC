@@ -835,7 +835,6 @@ marbleType: MARBLE_TYPES[Math.floor(Math.random() * MARBLE_TYPES.length)],
 // ============================================================================
 // EXPRESS & SOCKET.IO
 // ============================================================================
-const app = express();
 const server = http.createServer(app);
 
 app.use(express.json());
