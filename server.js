@@ -1005,13 +1005,10 @@ for (let i = 0; i < coinsToSpawn; i++) {
 const cashouts = checkCashoutTiers(killer);
 
 if (cashouts && cashouts.length > 0) {
-  // ✅ Aggregate all tier payouts into ONE notification
-  const totalAmount = cashouts.reduce((sum, c) => sum + c.amount, 0);
-  
+  // ✅ Send individual tier payouts so client can show each one
   io.to(killer.id).emit('cashout', {
-    amount: totalAmount,
-    total: killer.totalPayout,
-    tiersCrossed: cashouts.length
+    tiers: cashouts.map(c => ({ amount: c.amount, isGolden: c.isGolden || false })),
+    total: killer.totalPayout
   });
 }
 
