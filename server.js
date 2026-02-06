@@ -1006,14 +1006,16 @@ if (killer.alive) {
           // ✅ Check tier cashouts
           const cashouts = checkCashoutTiers(killer);
           
-          if (cashouts && cashouts.length > 0) {
+     if (cashouts && cashouts.length > 0) {
+            console.log(`💰 TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | totalPayout=$${killer.totalPayout}`);
             io.to(killer.id).emit('cashout', {
               tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false })),
-              total: killer.totalPayout
+              total: killer.totalPayout,
+              bountyGained: bountyGained
             });
           }
           
-          // ✅ GOLDEN MIB 20% INSTANT PAYOUT
+   // ✅ GOLDEN MIB 20% INSTANT PAYOUT
           if (killer.isGolden && bountyGained > 0) {
             const goldenPayout = Math.floor(bountyGained * 0.20);
             
@@ -1025,9 +1027,14 @@ if (killer.alive) {
               io.to(killer.id).emit('cashout', {
                 tiers: [{ amount: goldenPayout, isGolden: true }],
                 total: killer.totalPayout,
-                isGolden: true
+                isGolden: true,
+                bountyGained: bountyGained
               });
             }
+          } else if (killer.isGolden && bountyGained <= 0) {
+            console.log(`⚠️ GOLDEN BUT NO PAYOUT: ${killer.name} | bountyGained=${bountyGained} | victim bounty=${marble.bounty}`);
+          } else if (!killer.isGolden) {
+            console.log(`ℹ️ NOT GOLDEN: ${killer.name} killed ${marble.name} | bountyGained=$${bountyGained} | killer.isGolden=${killer.isGolden}`);
           }
           
           // Send kill notification
