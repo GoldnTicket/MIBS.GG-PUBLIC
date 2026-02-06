@@ -996,21 +996,49 @@ for (let i = 0; i < coinsToSpawn; i++) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
       
-  if (killer.alive) {
-  killer.bounty = (killer.bounty || 0) + dropInfo.bountyValue;
-  killer.kills = (killer.kills || 0) + 1;
-  // ✅ FIX: Removed lengthScore gain - length only from peewees!
+if (killer.alive) {
+        const bountyGained = dropInfo.bountyValue;
+        killer.bounty = (killer.bounty || 0) + bountyGained;
+        killer.kills = (killer.kills || 0) + 1;
         
-     
-const cashouts = checkCashoutTiers(killer);
-
-if (cashouts && cashouts.length > 0) {
-  // ✅ Send individual tier payouts so client can show each one
-  io.to(killer.id).emit('cashout', {
-    tiers: cashouts.map(c => ({ amount: c.amount, isGolden: c.isGolden || false })),
-    total: killer.totalPayout
-  });
-}
+        // Only emit events to real players, not bots
+        if (!killer.isBot) {
+          // ✅ Check tier cashouts
+          const cashouts = checkCashoutTiers(killer);
+          
+          if (cashouts && cashouts.length > 0) {
+            io.to(killer.id).emit('cashout', {
+              tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false })),
+              total: killer.totalPayout
+            });
+          }
+          
+          // ✅ GOLDEN MIB 20% INSTANT PAYOUT
+          if (killer.isGolden && bountyGained > 0) {
+            const goldenPayout = Math.floor(bountyGained * 0.20);
+            
+            if (goldenPayout > 0) {
+              killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
+              
+              console.log(`🥇 GOLDEN PAYOUT: ${killer.name} earned $${goldenPayout} (20% of $${bountyGained} bounty gain)`);
+              
+              io.to(killer.id).emit('cashout', {
+                tiers: [{ amount: goldenPayout, isGolden: true }],
+                total: killer.totalPayout,
+                isGolden: true
+              });
+            }
+          }
+          
+          // Send kill notification
+          io.to(killer.id).emit('playerKill', {
+            killerId: killer.id,
+            victimId: marble.id,
+            victimName: marble.name || 'Player',
+            bountyGained: bountyGained
+          });
+        }
+      }
 
 
       
