@@ -910,7 +910,7 @@ function checkCashoutTiers(player) {
           total: player.totalPayout
         });
         
-        console.log(`💰 SAWTOOTH CASHOUT! | ${player.name} | Tier ${player.nextTierIndex}: $${payout} | Bounty: $${bountyBefore.toFixed(0)} → $${player.bounty.toFixed(0)} | Total paid: $${player.totalPayout}`);
+        console.log(`💰 SAWTOOTH CASHOUT! | ${player.name} | Tier ${player.nextTierIndex}: $${payout} | Bounty: $${bountyBefore.toFixed(2)} → $${player.bounty.toFixed(2)} | Total paid: $${player.totalPayout}`);
       }
       
       player.nextTierIndex++;
@@ -1022,7 +1022,7 @@ if (killer.alive) {
           const cashouts = checkCashoutTiers(killer);
           
           if (cashouts && cashouts.length > 0) {
-            console.log(`💰 SAWTOOTH TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty after: $${killer.bounty.toFixed(0)} | totalPayout=$${killer.totalPayout}`);
+            console.log(`💰 SAWTOOTH TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty after: $${killer.bounty.toFixed(2)} | totalPayout=$${killer.totalPayout}`);
             io.to(killer.id).emit('cashout', {
               tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false })),
               total: killer.totalPayout,
