@@ -1042,7 +1042,7 @@ if (killer.alive) {
 
 
       
-      }
+      
     }
   }
   
