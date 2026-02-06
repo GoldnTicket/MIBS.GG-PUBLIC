@@ -887,43 +887,36 @@ function updateGoldenMarble() {
 }
 
 function checkCashoutTiers(player) {
-  if (!player.alive || player.isBot) return;
+  if (!player.alive || player.isBot) return [];
   
   const tiers = gameConstants.cashout.tiers;
   const cashoutsThisCheck = [];
   
-  console.log(`🔍 CHECK CASHOUT | Player: ${player.name} | Bounty: ${player.bounty} | PaidTiers: [${Array.from(player.paidTiers).join(', ')}]`);
-  
-  for (let i = 0; i < tiers.length; i++) {
-    const tier = tiers[i];
+  // ✅ SAWTOOTH: Keep checking while bounty crosses current tier
+  while (player.nextTierIndex < tiers.length) {
+    const tier = tiers[player.nextTierIndex];
     
-    // Debug each tier check
-    const alreadyPaid = player.paidTiers.has(i);
-    const meetsThreshold = player.bounty >= tier.threshold;
-    
-    console.log(`  Tier ${i}: threshold=${tier.threshold}, payout=$${tier.payout}, alreadyPaid=${alreadyPaid}, meetsThreshold=${meetsThreshold}`);
-    
-    // Skip if already paid or if we haven't reached threshold yet
-    if (alreadyPaid || !meetsThreshold) continue;
-    
-    // Skip tiers with no payout
-    if (tier.payout <= 0) {
-      player.paidTiers.add(i);
-      console.log(`  ✅ Tier ${i} marked as paid (no payout)`);
-      continue;
+    if (player.bounty >= tier.threshold) {
+      const payout = tier.payout;
+      
+      if (payout > 0) {
+        const bountyBefore = player.bounty;
+        player.totalPayout += payout;
+        player.bounty -= payout;  // ✅ SAWTOOTH: Reduce bounty by payout amount
+        
+        cashoutsThisCheck.push({
+          tierIndex: player.nextTierIndex,
+          amount: payout,
+          total: player.totalPayout
+        });
+        
+        console.log(`💰 SAWTOOTH CASHOUT! | ${player.name} | Tier ${player.nextTierIndex}: $${payout} | Bounty: $${bountyBefore.toFixed(0)} → $${player.bounty.toFixed(0)} | Total paid: $${player.totalPayout}`);
+      }
+      
+      player.nextTierIndex++;
+    } else {
+      break;  // Haven't reached next tier yet
     }
-    
-    // ✅ CASHOUT TRIGGERED!
-    player.paidTiers.add(i);
-    player.totalPayout += tier.payout;
-    
-    console.log(`💰 CASHOUT! | Player: ${player.name} | Tier ${i}: $${tier.payout} | Total: $${player.totalPayout} | PaidTiers now: [${Array.from(player.paidTiers).join(', ')}]`);
-    
-cashoutsThisCheck.push({
-      tierIndex: i,
-      amount: tier.payout,
-      total: player.totalPayout
-    });
   }
   
   return cashoutsThisCheck;
@@ -998,43 +991,43 @@ for (let i = 0; i < coinsToSpawn; i++) {
       
 if (killer.alive) {
         const bountyGained = dropInfo.bountyValue;
-        killer.bounty = (killer.bounty || 0) + bountyGained;
         killer.kills = (killer.kills || 0) + 1;
         
-        // Only emit events to real players, not bots
+        // ✅ GOLDEN 20% ABSORPTION TAX: Take off the top BEFORE adding to bounty
+        let actualBountyAdded = bountyGained;
+        let goldenPayout = 0;
+        
+        if (killer.isGolden && bountyGained > 0) {
+          goldenPayout = bountyGained * 0.20;
+          actualBountyAdded = bountyGained - goldenPayout;  // Only 80% goes to bounty
+          console.log(`🥇 GOLDEN TAX: ${killer.name} | Absorbed $${bountyGained} | 20% tax: $${goldenPayout.toFixed(2)} paid | 80%: $${actualBountyAdded.toFixed(2)} added to bounty`);
+        }
+        
+        killer.bounty = (killer.bounty || 0) + actualBountyAdded;
+        
         if (!killer.isBot) {
-          // ✅ Check tier cashouts
-          const cashouts = checkCashoutTiers(killer);
-          
-     if (cashouts && cashouts.length > 0) {
-            console.log(`💰 TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | totalPayout=$${killer.totalPayout}`);
+          // ✅ Golden instant payout (BEFORE tier check, since bounty is already reduced)
+          if (goldenPayout > 0) {
+            killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
+            
             io.to(killer.id).emit('cashout', {
-              tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false })),
+              tiers: [{ amount: goldenPayout, isGolden: true }],
               total: killer.totalPayout,
+              isGolden: true,
               bountyGained: bountyGained
             });
           }
           
-   // ✅ GOLDEN MIB 20% INSTANT PAYOUT
-          if (killer.isGolden && bountyGained > 0) {
-            const goldenPayout = Math.floor(bountyGained * 0.20);
-            
-            if (goldenPayout > 0) {
-              killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
-              
-              console.log(`🥇 GOLDEN PAYOUT: ${killer.name} earned $${goldenPayout} (20% of $${bountyGained} bounty gain)`);
-              
-              io.to(killer.id).emit('cashout', {
-                tiers: [{ amount: goldenPayout, isGolden: true }],
-                total: killer.totalPayout,
-                isGolden: true,
-                bountyGained: bountyGained
-              });
-            }
-          } else if (killer.isGolden && bountyGained <= 0) {
-            console.log(`⚠️ GOLDEN BUT NO PAYOUT: ${killer.name} | bountyGained=${bountyGained} | victim bounty=${marble.bounty}`);
-          } else if (!killer.isGolden) {
-            console.log(`ℹ️ NOT GOLDEN: ${killer.name} killed ${marble.name} | bountyGained=$${bountyGained} | killer.isGolden=${killer.isGolden}`);
+          // ✅ SAWTOOTH: Check tier cashouts (bounty may cross tier, then get reduced)
+          const cashouts = checkCashoutTiers(killer);
+          
+          if (cashouts && cashouts.length > 0) {
+            console.log(`💰 SAWTOOTH TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty after: $${killer.bounty.toFixed(0)} | totalPayout=$${killer.totalPayout}`);
+            io.to(killer.id).emit('cashout', {
+              tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false })),
+              total: killer.totalPayout,
+              bountyGained: actualBountyAdded
+            });
           }
           
           // Send kill notification
@@ -1042,7 +1035,7 @@ if (killer.alive) {
             killerId: killer.id,
             victimId: marble.id,
             victimName: marble.name || 'Player',
-            bountyGained: bountyGained
+            bountyGained: actualBountyAdded
           });
         }
       }
@@ -1141,8 +1134,8 @@ _lastAngle: 0,
   lastProcessedInput: -1,  // ✅ FIX: Initialize for input reconciliation
   // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
 
-      // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING
-      paidTiers: new Set(),
+   // ✅ SERVER-AUTHORITATIVE PAYOUT TRACKING (SAWTOOTH)
+      nextTierIndex: 0,
       totalPayout: 0
     };
     
@@ -1507,8 +1500,8 @@ for (let i = gameState.bots.length - 1; i >= 0; i--) {
         kills: p.kills,
         alive: p.alive,
         isGolden: p.isGolden,
-        lastProcessedInput: p.lastProcessedInput
-      }
+lastProcessedInput: p.lastProcessedInput,
+        nextTierIndex: p.nextTierIndex || 0      }
     ])
   );
   
