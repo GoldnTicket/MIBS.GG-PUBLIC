@@ -68,7 +68,7 @@
   },
   
   "collision": {
-    "dropValueMultiplier": 0.50,
+    "dropValueMultiplier": 0.90,
     "gridSizePx": 64
   },
   
