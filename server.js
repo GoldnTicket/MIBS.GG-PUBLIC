@@ -314,7 +314,7 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.max(5, Math.floor(totalValue / 50));  // Minimum 5 peewees, more for bigger marbles
+  const numDrops = Math.max(5, Math.floor(totalValue / 30));  // Minimum 5 peewees, more for bigger marbles
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
