@@ -1,10 +1,10 @@
 // MIBS.GG SERVER - HYBRID BEST OF BOTH
-// ✅ 60 TPS (Slither.io) from Doc 14
-// ✅ Reconciliation system from Doc 14
-// ✅ Clean serialization from Doc 14
-// ✅ Peewee physics from Doc 15
-// ✅ Advanced features from Doc 15
-// ✅ ALL functionality preserved
+// ✅ 60 TPS 
+// ✅ Reconciliation system
+// ✅ Clean serialization
+// ✅ Peewee physics from
+// ✅ Advanced features
+// ✅ ALL functionality preserved ABOUT TO CHANGE A BIT! 
 
 require('dotenv').config();
 const express = require('express');
@@ -314,7 +314,7 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.max(5, Math.floor(totalValue / 50));  // Minimum 5 peewees, more for bigger marbles
+  const numDrops = Math.max(5, Math.floor(totalValue / 30));  // Minimum 5 peewees, more for bigger marbles
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
@@ -1152,32 +1152,22 @@ _lastAngle: 0,
     console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
   });
 
-  // ✅ INPUT-BASED with sequence tracking (from Doc 14)
-  socket.on('playerInput', (data) => {
+socket.on('playerInput', (data) => {
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
     
-    // Validate
-    if (typeof data.mouseX !== 'number' || 
-        typeof data.mouseY !== 'number' ||
-        isNaN(data.mouseX) || 
-        isNaN(data.mouseY)) {
+    if (typeof data.targetAngle !== 'number' || 
+        isNaN(data.targetAngle) || 
+        !isFinite(data.targetAngle)) {
       return;
     }
-    
-    // ✅ Calculate target angle from mouse position (server authoritative)
-    const dx = data.mouseX - player.x;
-    const dy = data.mouseY - player.y;
-    player.targetAngle = Math.atan2(dy, dx);
-    player.boosting = !!data.boost;
-    
-    // ✅ Track input sequence for reconciliation
-    if (typeof data.seq === 'number' && data.seq > player.lastProcessedInput) {
-      player.lastProcessedInput = data.seq;
-    }
-    
+      
+    player.targetAngle = data.targetAngle;
+    player.boosting = !!data.boosting;
     player.lastUpdate = Date.now();
   });
+
+
 
   socket.on('disconnect', () => {
     console.log(`🔌 Player disconnected: ${socket.id.substring(0, 8)}`);
