@@ -51,7 +51,7 @@
     "radius": 20,
     "targetWidth": 40,
     "mass": 1.0,
-    "friction": 0.950,
+    "friction": 0.970,
     "initialRollSpeedMin": 150,
     "initialRollSpeedMax": 250,
     "bounceMultiplier": 1.0,
