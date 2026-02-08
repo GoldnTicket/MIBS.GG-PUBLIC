@@ -150,21 +150,32 @@ for (const peewee of gameState.coins) {
       peewee.y -= ny * overlap;
     }
     
- // ✅ PEEWEE-PEEWEE COLLISION (skip sqrt with distance² comparison)
+    // ✅ PEEWEE-PEEWEE COLLISION
     for (const other of gameState.coins) {
       if (other === peewee) continue;
       
       const dx = other.x - peewee.x;
       const dy = other.y - peewee.y;
-      const distSq = dx * dx + dy * dy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
       const minDist = peewee.radius + other.radius;
-      const minDistSq = minDist * minDist;
       
-      // ✅ Early exit: skip sqrt entirely if clearly too far
-      if (distSq > minDistSq) continue;
-      if (distSq === 0) continue;
-      
-      const dist = Math.sqrt(distSq); // Only sqrt when actually colliding
+      if (dist < minDist && dist > 0) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        
+        const tempVx = peewee.vx;
+        const tempVy = peewee.vy;
+        peewee.vx = other.vx * peeweeBounceMultiplier;
+        peewee.vy = other.vy * peeweeBounceMultiplier;
+        other.vx = tempVx * peeweeBounceMultiplier;
+        other.vy = tempVy * peeweeBounceMultiplier;
+        
+        const overlap = minDist - dist;
+        peewee.x -= nx * (overlap / 2);
+        peewee.y -= ny * (overlap / 2);
+        other.x += nx * (overlap / 2);
+        other.y += ny * (overlap / 2);
+      }
     }
     
     // ✅ MARBLE COLLISION (bounce off player/bot marbles)
@@ -1419,9 +1430,8 @@ if (tickCounter % 60 === 0) {
 
 
 // ========================================
-// 9.5. GHOST MARBLE CLEANUP (Memory Leak Fix) - Every 2 seconds
+// 9.5. GHOST MARBLE CLEANUP (Memory Leak Fix)
 // ========================================
-if (tickCounter % 120 === 0) {
 // Remove any dead players that weren't properly cleaned up
 Object.keys(gameState.players).forEach(playerId => {
   const player = gameState.players[playerId];
@@ -1438,7 +1448,7 @@ for (let i = gameState.bots.length - 1; i >= 0; i--) {
     gameState.bots.splice(i, 1);
   }
 }
-} // ✅ Close the tickCounter % 120 gate
+
 
   // ========================================
   // 10. STALE PLAYER CLEANUP
