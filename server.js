@@ -1152,22 +1152,32 @@ _lastAngle: 0,
     console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
   });
 
-socket.on('playerInput', (data) => {
+  // ✅ INPUT-BASED with sequence tracking (from Doc 14)
+  socket.on('playerInput', (data) => {
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
     
-    if (typeof data.targetAngle !== 'number' || 
-        isNaN(data.targetAngle) || 
-        !isFinite(data.targetAngle)) {
+    // Validate
+    if (typeof data.mouseX !== 'number' || 
+        typeof data.mouseY !== 'number' ||
+        isNaN(data.mouseX) || 
+        isNaN(data.mouseY)) {
       return;
     }
-      
-    player.targetAngle = data.targetAngle;
-    player.boosting = !!data.boosting;
+    
+    // ✅ Calculate target angle from mouse position (server authoritative)
+    const dx = data.mouseX - player.x;
+    const dy = data.mouseY - player.y;
+    player.targetAngle = Math.atan2(dy, dx);
+    player.boosting = !!data.boost;
+    
+    // ✅ Track input sequence for reconciliation
+    if (typeof data.seq === 'number' && data.seq > player.lastProcessedInput) {
+      player.lastProcessedInput = data.seq;
+    }
+    
     player.lastUpdate = Date.now();
   });
-
-
 
   socket.on('disconnect', () => {
     console.log(`🔌 Player disconnected: ${socket.id.substring(0, 8)}`);
