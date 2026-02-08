@@ -122,7 +122,7 @@
   
   "spline": {
     "pathStepPx": 1.0,
-    "segmentSpacingMultiplier": 0.3
+    "segmentSpacingMultiplier": 0.9
   },
   
   "depths": {
