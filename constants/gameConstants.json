@@ -52,8 +52,8 @@
     "targetWidth": 40,
     "mass": 1.0,
     "friction": 0.950,
-    "initialRollSpeedMin": 100,
-    "initialRollSpeedMax": 200,
+    "initialRollSpeedMin": 150,
+    "initialRollSpeedMax": 250,
     "bounceMultiplier": 1.0,
     "peeweeBounceMultiplier": 1.0,
     "gravity": 5.0,
@@ -68,7 +68,7 @@
   },
   
   "collision": {
-    "dropValueMultiplier": 0.20,
+    "dropValueMultiplier": 0.50,
     "gridSizePx": 64
   },
   
