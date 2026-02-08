@@ -121,7 +121,7 @@
   },
   
   "spline": {
-    "pathStepPx": 1.2,
+    "pathStepPx": 1.0,
     "segmentSpacingMultiplier": 0.3
   },
   
