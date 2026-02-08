@@ -85,7 +85,7 @@
     "alphaEnd": 0,
     "scaleStart": 1.2,
     "scaleEnd": 0.1,
-    "gravity": 40
+    "gravity": 20
   },
   
 "boost": {
@@ -121,8 +121,8 @@
   },
   
   "spline": {
-    "pathStepPx": 1,
-    "segmentSpacingMultiplier": 1.1
+    "pathStepPx": 1.2,
+    "segmentSpacingMultiplier": 0.8
   },
   
   "depths": {
