@@ -34,7 +34,7 @@
   
 "marble": {
   "shooterTargetWidth": 60,
-  "radiusPerLength": 0.12,
+  "radiusPerLength": 0.10,
   "maxRadius": 200,
   "spinEnabled": true,
   "spinSpeedMin": 0.0,
@@ -56,7 +56,7 @@
     "initialRollSpeedMax": 250,
     "bounceMultiplier": 1.0,
     "peeweeBounceMultiplier": 1.0,
-    "gravity": 5.0,
+    "gravity": 4.0,
     "shadowEnabled": true,
     "shadowOffsetY": 14,
     "shadowAlpha": 0.9,
@@ -68,12 +68,12 @@
   },
   
   "collision": {
-    "dropValueMultiplier": 0.90,
+    "dropValueMultiplier": 0.60,
     "gridSizePx": 64
   },
   
   "suction": {
-    "extraRadius": 80
+    "extraRadius": 75
   },
   
   "dust": {
