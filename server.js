@@ -486,7 +486,7 @@ function updateBotAI(bot, delta) {
   if (!bot._aiState) {
     bot._aiState = 'HUNT_COIN';
     bot._stateTimer = 0;
-    bot._reactionDelay = 150 + Math.random() * 200; // 150-350ms reaction time
+bot._reactionDelay = 400 + Math.random() * 400; // 400-800ms reaction time
     bot._lastPlayerSeen = null;
     bot._personality = Math.random(); // 0 = passive, 1 = aggressive
     bot._steerSmooth = bot.angle; // Smoothed steering
@@ -540,8 +540,11 @@ function updateBotAI(bot, delta) {
     // PRIORITY 3: HUNT / COLLECT / WANDER
     // ========================================
     else {
-      // Aggressive bots hunt players/bots when big enough
-      if (bot._personality > 0.6 && bot.lengthScore > 200 && bot._stateTimer > bot._reactionDelay) {
+// ✅ Always try coins first
+      const nearestCoin = findNearestCoin(bot, 500);
+      
+      // Only hunt players when NO coins nearby and bot is big + aggressive
+      if (!nearestCoin && bot._personality > 0.7 && bot.lengthScore > 300 && bot._stateTimer > bot._reactionDelay) {
         const huntTarget = findHuntTarget(bot);
         
         if (huntTarget) {
@@ -566,9 +569,8 @@ function updateBotAI(bot, delta) {
       }
       
       // Collect coins
-      if (bot._aiState === 'HUNT_COIN' || bot._aiState === 'HUNT_PLAYER') {
+ if (bot._aiState === 'HUNT_COIN' || bot._aiState === 'HUNT_PLAYER') {
         if (bot._aiState !== 'HUNT_PLAYER') {
-          const nearestCoin = findNearestCoin(bot, 800);
           if (nearestCoin) {
             bot.targetAngle = Math.atan2(nearestCoin.y - bot.y, nearestCoin.x - bot.x);
             
