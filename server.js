@@ -1167,7 +1167,7 @@ if (typeof data.targetAngle !== 'number' ||
     
     player.targetAngle = data.targetAngle;
     player.boosting = !!data.boost;
-    
+
     
     // ✅ Track input sequence for reconciliation
     if (typeof data.seq === 'number' && data.seq > player.lastProcessedInput) {
@@ -1291,17 +1291,10 @@ setInterval(() => {
     );
     
     // Calculate speed
-   // ✅ Smooth boost ramp (3 ticks to full speed)
-    if (!player._boostBlend) player._boostBlend = 0;
-    if (player.boosting) {
-      player._boostBlend = Math.min(1, player._boostBlend + 0.33);
-    } else {
-      player._boostBlend = Math.max(0, player._boostBlend - 0.33);
-    }
-    const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
+const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
     const baseSpeed = gameConstants.movement?.normalSpeed || 250;
     const boostMult = gameConstants.movement?.boostMultiplier || 1.6;
-    const speed = (baseSpeed + baseSpeed * (boostMult - 1) * player._boostBlend) * goldenBoost;
+    const speed = (player.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
     
     // Calculate new position
     const newX = player.x + Math.cos(player.angle) * speed * dt;
