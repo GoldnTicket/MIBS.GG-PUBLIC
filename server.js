@@ -1,4 +1,4 @@
-// MIBS.GG SERVER - HYBRID BEST OF BOTH
+// MIBS.GG SERVER - SMART BOTS 
 // ✅ 60 TPS 
 // ✅ Reconciliation system
 // ✅ Clean serialization
@@ -346,13 +346,15 @@ function findSafeSpawn(minDistance, arenaRadius) {
   return { x: 0, y: 0 };
 }
 
+
+
 // ============================================================================
-// BOT AI (Advanced from Doc 15)
+// BOT AI — SMART BOTS
 // ============================================================================
 
-function findNearestCoin(marble) {
+function findNearestCoin(marble, maxRange) {
   let nearest = null;
-  let minDist = Infinity;
+  let minDist = maxRange || Infinity;
   
   for (const coin of gameState.coins) {
     const dist = Math.hypot(coin.x - marble.x, coin.y - marble.y);
@@ -364,114 +366,288 @@ function findNearestCoin(marble) {
   return nearest;
 }
 
-function isInDanger(bot) {
-  const marbleRadius = calculateMarbleRadius(bot.lengthScore, gameConstants);
-  const dangerRadius = marbleRadius + 200;
-  
+// ✅ Check if a position is too close to arena wall
+function isNearWall(x, y, buffer) {
+  const distFromCenter = Math.sqrt(x * x + y * y);
+  return distFromCenter + buffer > gameConstants.arena.radius;
+}
+
+// ✅ Get steering angle AWAY from wall (tangent + inward)
+function getWallAvoidAngle(x, y) {
+  // Point toward center, but offset 45° so bot curves away smoothly
+  const angleToCenter = Math.atan2(-y, -x);
+  const offset = (Math.random() > 0.5 ? 1 : -1) * (Math.PI / 4);
+  return angleToCenter + offset;
+}
+
+// ✅ Scan ahead for body segments in bot's path
+function scanForBodies(bot, lookAhead, scanWidth) {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
     .filter(m => m.alive && m.id !== bot.id);
   
+  const cosA = Math.cos(bot.angle);
+  const sinA = Math.sin(bot.angle);
+  
+  let closestThreat = null;
+  let closestDist = lookAhead;
+  
   for (const other of allMarbles) {
-    if (other.lengthScore < bot.lengthScore * 0.7) continue;
+    const otherRadius = calculateMarbleRadius(other.lengthScore, gameConstants);
     
-    const dist = Math.hypot(other.x - bot.x, other.y - bot.y);
+    // Check head
+    const hdx = other.x - bot.x;
+    const hdy = other.y - bot.y;
+    const headDist = Math.sqrt(hdx * hdx + hdy * hdy);
     
-    if (dist < dangerRadius) {
-      const theirAngle = other.angle;
-      const angleToUs = Math.atan2(bot.y - other.y, bot.x - other.x);
-      const angleDiff = Math.abs(wrapAngle(theirAngle - angleToUs));
+    if (headDist < lookAhead) {
+      // Project onto bot's forward direction
+      const forward = hdx * cosA + hdy * sinA;
+      const lateral = Math.abs(-hdx * sinA + hdy * cosA);
       
-      if (angleDiff < Math.PI / 2) {
-        return { danger: true, threatX: other.x, threatY: other.y };
+      if (forward > 0 && forward < closestDist && lateral < scanWidth + otherRadius) {
+        closestDist = forward;
+        closestThreat = { x: other.x, y: other.y, isHead: true, ownerId: other.id };
+      }
+    }
+    
+    // Check body segments
+    if (other.pathBuffer && other.pathBuffer.samples.length > 1) {
+      const segSpacing = 20;
+      const bodyLen = other.lengthScore * 2;
+      const numSegs = Math.floor(bodyLen / segSpacing);
+      
+      // Only check every 3rd segment for performance
+      for (let i = 1; i <= numSegs; i += 3) {
+        const sample = other.pathBuffer.sampleBack(i * segSpacing);
+        const sdx = sample.x - bot.x;
+        const sdy = sample.y - bot.y;
+        const segDist = Math.sqrt(sdx * sdx + sdy * sdy);
+        
+        if (segDist < lookAhead) {
+          const forward = sdx * cosA + sdy * sinA;
+          const lateral = Math.abs(-sdx * sinA + sdy * cosA);
+          const segRadius = otherRadius * 0.9;
+          
+          if (forward > 0 && forward < closestDist && lateral < scanWidth + segRadius) {
+            closestDist = forward;
+            closestThreat = { x: sample.x, y: sample.y, isHead: false, ownerId: other.id };
+          }
+        }
       }
     }
   }
-  return { danger: false };
+  
+  return closestThreat;
+}
+
+// ✅ Find a huntable target (smaller or similar size, nearby)
+function findHuntTarget(bot) {
+  const allMarbles = [...Object.values(gameState.players), ...gameState.bots]
+    .filter(m => m.alive && m.id !== bot.id);
+  
+  let bestTarget = null;
+  let bestScore = -Infinity;
+  
+  for (const other of allMarbles) {
+    const dist = Math.hypot(other.x - bot.x, other.y - bot.y);
+    if (dist > 600) continue; // Only hunt nearby
+    
+    // Prefer smaller targets, closer targets, and players over bots
+    const sizeAdvantage = bot.lengthScore - other.lengthScore;
+    if (sizeAdvantage < -50) continue; // Don't hunt much bigger
+    
+    const score = sizeAdvantage * 2 - dist + (other.isBot ? 0 : 100) + (other.bounty || 0) * 5;
+    
+    if (score > bestScore) {
+      bestScore = score;
+      bestTarget = other;
+    }
+  }
+  
+  return bestScore > 0 ? bestTarget : null;
+}
+
+// ✅ Get angle to intercept a moving target (lead the target)
+function getInterceptAngle(bot, target) {
+  const baseSpeed = gameConstants.movement?.normalSpeed || 250;
+  
+  // Predict where target will be in ~0.5 seconds
+  const predictX = target.x + Math.cos(target.angle || 0) * baseSpeed * 0.5;
+  const predictY = target.y + Math.sin(target.angle || 0) * baseSpeed * 0.5;
+  
+  return Math.atan2(predictY - bot.y, predictX - bot.x);
 }
 
 function updateBotAI(bot, delta) {
+  const dt = TICK_RATE / 1000;
+  const botRadius = calculateMarbleRadius(bot.lengthScore, gameConstants);
+  
+  // ✅ Initialize AI state
   if (!bot._aiState) {
     bot._aiState = 'HUNT_COIN';
     bot._stateTimer = 0;
+    bot._reactionDelay = 150 + Math.random() * 200; // 150-350ms reaction time
+    bot._lastPlayerSeen = null;
+    bot._personality = Math.random(); // 0 = passive, 1 = aggressive
+    bot._steerSmooth = bot.angle; // Smoothed steering
   }
   
   bot._stateTimer += delta;
   
-  const dangerCheck = isInDanger(bot);
+  // ========================================
+  // PRIORITY 1: WALL AVOIDANCE (always active)
+  // ========================================
+  const wallBuffer = botRadius + 150;
+  const futureX = bot.x + Math.cos(bot.angle) * 200;
+  const futureY = bot.y + Math.sin(bot.angle) * 200;
   
-  if (dangerCheck.danger) {
-    bot._aiState = 'EVADE';
-    const dx = bot.x - dangerCheck.threatX;
-    const dy = bot.y - dangerCheck.threatY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+  if (isNearWall(futureX, futureY, wallBuffer) || isNearWall(bot.x, bot.y, wallBuffer)) {
+    bot._aiState = 'WALL_AVOID';
+    const avoidAngle = getWallAvoidAngle(bot.x, bot.y);
+    bot.targetAngle = avoidAngle;
+    bot.boosting = false;
     
-    if (dist > 1) {
-      const escapeAngle = Math.atan2(dy, dx) + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
-      bot.targetX = bot.x + Math.cos(escapeAngle) * 400;
-      bot.targetY = bot.y + Math.sin(escapeAngle) * 400;
+    // Emergency: very close to wall, steer harder toward center
+    const distFromCenter = Math.sqrt(bot.x * bot.x + bot.y * bot.y);
+    if (distFromCenter + botRadius > gameConstants.arena.radius - 50) {
+      bot.targetAngle = Math.atan2(-bot.y, -bot.x); // Straight to center
     }
-  } else {
-    if (bot._aiState === 'EVADE' && bot._stateTimer > 1500) {
-      bot._aiState = 'HUNT_COIN';
+  }
+  
+  // ========================================
+  // PRIORITY 2: BODY/HEAD COLLISION AVOIDANCE
+  // ========================================
+  else {
+    const lookAhead = 150 + (bot.boosting ? 100 : 0);
+    const scanWidth = botRadius + 20;
+    const threat = scanForBodies(bot, lookAhead, scanWidth);
+    
+    if (threat) {
+      bot._aiState = 'DODGE';
+      
+      // Steer perpendicular to threat
+      const angleToThreat = Math.atan2(threat.y - bot.y, threat.x - bot.x);
+      const angleDiff = wrapAngle(angleToThreat - bot.angle);
+      
+      // Dodge left or right depending on which side threat is on
+      const dodgeDir = angleDiff > 0 ? -1 : 1;
+      bot.targetAngle = bot.angle + dodgeDir * (Math.PI / 2.5);
+      bot.boosting = false; // Slow down to steer better
+      
     }
     
-    if (bot._aiState === 'HUNT_COIN') {
-      const nearestCoin = findNearestCoin(bot);
-      if (nearestCoin) {
-        bot.targetX = nearestCoin.x;
-        bot.targetY = nearestCoin.y;
-      } else {
-        bot._aiState = 'WANDER';
+    // ========================================
+    // PRIORITY 3: HUNT / COLLECT / WANDER
+    // ========================================
+    else {
+      // Aggressive bots hunt players/bots when big enough
+      if (bot._personality > 0.6 && bot.lengthScore > 200 && bot._stateTimer > bot._reactionDelay) {
+        const huntTarget = findHuntTarget(bot);
+        
+        if (huntTarget) {
+          bot._aiState = 'HUNT_PLAYER';
+          
+          // ✅ Delayed reaction: use last known position, not current
+          if (!bot._lastPlayerSeen || Date.now() - (bot._lastSeenTime || 0) > bot._reactionDelay) {
+            bot._lastPlayerSeen = { x: huntTarget.x, y: huntTarget.y, angle: huntTarget.angle || 0 };
+            bot._lastSeenTime = Date.now();
+          }
+          
+          // Lead the target with prediction
+          bot.targetAngle = getInterceptAngle(bot, bot._lastPlayerSeen);
+          
+          // Boost to close distance
+          const huntDist = Math.hypot(huntTarget.x - bot.x, huntTarget.y - bot.y);
+          bot.boosting = huntDist < 400 && huntDist > 100;
+          
+        } else {
+          bot._aiState = 'HUNT_COIN';
+        }
       }
-    }
-    
-    if (bot._aiState === 'WANDER' || !bot.targetX) {
-      if (bot._stateTimer > 1500 || !bot.targetX) {
-        const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * gameConstants.arena.radius * 0.6;
-        bot.targetX = Math.cos(angle) * distance;
-        bot.targetY = Math.sin(angle) * distance;
-        bot._stateTimer = 0;
+      
+      // Collect coins
+      if (bot._aiState === 'HUNT_COIN' || bot._aiState === 'HUNT_PLAYER') {
+        if (bot._aiState !== 'HUNT_PLAYER') {
+          const nearestCoin = findNearestCoin(bot, 800);
+          if (nearestCoin) {
+            bot.targetAngle = Math.atan2(nearestCoin.y - bot.y, nearestCoin.x - bot.x);
+            
+            // Boost toward coin clusters
+            const coinDist = Math.hypot(nearestCoin.x - bot.x, nearestCoin.y - bot.y);
+            bot.boosting = coinDist > 200 && bot.lengthScore > 150 && Math.random() < 0.3;
+          } else {
+            bot._aiState = 'WANDER';
+          }
+        }
+      }
+      
+      // Wander when nothing to do
+      if (bot._aiState === 'WANDER') {
+        if (bot._stateTimer > 2000 + Math.random() * 2000) {
+          // Pick random point within safe zone (70% of arena)
+          const angle = Math.random() * Math.PI * 2;
+          const distance = Math.random() * gameConstants.arena.radius * 0.6;
+          bot._wanderTarget = {
+            x: Math.cos(angle) * distance,
+            y: Math.sin(angle) * distance
+          };
+          bot._stateTimer = 0;
+        }
+        
+        if (bot._wanderTarget) {
+          bot.targetAngle = Math.atan2(
+            bot._wanderTarget.y - bot.y,
+            bot._wanderTarget.x - bot.x
+          );
+        }
+        bot.boosting = false;
+        
+        // Switch back to coin hunting periodically
+        if (bot._stateTimer > 1000) {
+          bot._aiState = 'HUNT_COIN';
+        }
       }
     }
   }
   
-  const dx = bot.targetX - bot.x;
-  const dy = bot.targetY - bot.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
+  // ========================================
+  // APPLY MOVEMENT (shared for all states)
+  // ========================================
+  bot.angle = calculateTurnStep(
+    bot.targetAngle,
+    bot.angle,
+    bot.lengthScore,
+    bot.boosting,
+    gameConstants,
+    dt
+  );
   
-  if (dist > 20) {
-    const targetAngle = Math.atan2(dy, dx);
-    bot.targetAngle = targetAngle;
-    
-    const dt = TICK_RATE / 1000;
-    bot.angle = calculateTurnStep(
-      targetAngle,
-      bot.angle,
-      bot.lengthScore,
-      bot.boosting,
-      gameConstants,
-      dt
-    );
+  const goldenBoost = bot.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
+  const baseSpeed = gameConstants.movement?.normalSpeed || 250;
+  const boostMult = gameConstants.movement?.boostMultiplier || 1.6;
+  const speed = (bot.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
   
-    const goldenBoost = bot.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
-    const baseSpeed = gameConstants.movement?.normalSpeed || 250;
-    const boostMult = gameConstants.movement?.boostMultiplier || 1.6;
-    const speed = (bot.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
-    
-    const newX = bot.x + Math.cos(bot.angle) * speed * dt;
-    const newY = bot.y + Math.sin(bot.angle) * speed * dt;
-    
-    const marbleRadius = calculateMarbleRadius(bot.lengthScore, gameConstants);
-    const distFromCenter = Math.sqrt(newX * newX + newY * newY);
-    
-    if (distFromCenter + marbleRadius < gameConstants.arena.radius - 10) {
-      bot.x = newX;
-      bot.y = newY;
-      bot.pathBuffer.add(bot.x, bot.y);
-    }
+  const newX = bot.x + Math.cos(bot.angle) * speed * dt;
+  const newY = bot.y + Math.sin(bot.angle) * speed * dt;
+  
+  const distFromCenter = Math.sqrt(newX * newX + newY * newY);
+  
+  if (distFromCenter + botRadius < gameConstants.arena.radius - 5) {
+    bot.x = newX;
+    bot.y = newY;
+    bot.pathBuffer.add(bot.x, bot.y);
+  } else {
+    // Emergency: force steer toward center next tick
+    bot.targetAngle = Math.atan2(-bot.y, -bot.x);
   }
 }
+
+
+
+
+
+
+
 
 function checkCollisions(gameState, C) {
   const results = [];
