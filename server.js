@@ -316,7 +316,7 @@ function calculateBountyDrop(marble, C) {
 function calculateDropDistribution(totalValue, C, lengthScore) {
   const segmentSpacing = 20;
   const numSegments = Math.floor((lengthScore * 2) / segmentSpacing);
-  const minDrops = numSegments * 3;
+  const minDrops = numSegments * 1;
   const numDrops = Math.max(minDrops, Math.floor(totalValue / 30));
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
