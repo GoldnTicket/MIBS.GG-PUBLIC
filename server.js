@@ -1159,19 +1159,15 @@ _lastAngle: 0,
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
     
-    // Validate
-    if (typeof data.mouseX !== 'number' || 
-        typeof data.mouseY !== 'number' ||
-        isNaN(data.mouseX) || 
-        isNaN(data.mouseY)) {
+if (typeof data.targetAngle !== 'number' || 
+        isNaN(data.targetAngle) || 
+        !isFinite(data.targetAngle)) {
       return;
     }
     
-    // ✅ Calculate target angle from mouse position (server authoritative)
-    const dx = data.mouseX - player.x;
-    const dy = data.mouseY - player.y;
-    player.targetAngle = Math.atan2(dy, dx);
+    player.targetAngle = data.targetAngle;
     player.boosting = !!data.boost;
+    
     
     // ✅ Track input sequence for reconciliation
     if (typeof data.seq === 'number' && data.seq > player.lastProcessedInput) {
