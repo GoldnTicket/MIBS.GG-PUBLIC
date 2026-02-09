@@ -314,7 +314,7 @@ function calculateBountyDrop(marble, C) {
 }
 
 function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.max(5, Math.floor(totalValue / 30));  // Minimum 5 peewees, more for bigger marbles
+  const numDrops = Math.max(8, Math.floor(totalValue / 50));  // Minimum 5 peewees, more for bigger marbles
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
@@ -1293,10 +1293,17 @@ setInterval(() => {
     );
     
     // Calculate speed
+   // ✅ Smooth boost ramp (3 ticks to full speed)
+    if (!player._boostBlend) player._boostBlend = 0;
+    if (player.boosting) {
+      player._boostBlend = Math.min(1, player._boostBlend + 0.33);
+    } else {
+      player._boostBlend = Math.max(0, player._boostBlend - 0.33);
+    }
     const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
     const baseSpeed = gameConstants.movement?.normalSpeed || 250;
     const boostMult = gameConstants.movement?.boostMultiplier || 1.6;
-    const speed = (player.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
+    const speed = (baseSpeed + baseSpeed * (boostMult - 1) * player._boostBlend) * goldenBoost;
     
     // Calculate new position
     const newX = player.x + Math.cos(player.angle) * speed * dt;
