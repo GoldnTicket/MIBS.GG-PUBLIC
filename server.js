@@ -313,8 +313,11 @@ function calculateBountyDrop(marble, C) {
   return { totalValue, bountyValue };
 }
 
-function calculateDropDistribution(totalValue, C) {
-  const numDrops = Math.max(8, Math.floor(totalValue / 50));  // Minimum 5 peewees, more for bigger marbles
+function calculateDropDistribution(totalValue, C, lengthScore) {
+  const segmentSpacing = 20;
+  const numSegments = Math.floor((lengthScore * 2) / segmentSpacing);
+  const minDrops = numSegments * 3;
+  const numDrops = Math.max(minDrops, Math.floor(totalValue / 30));
   const valuePerDrop = totalValue / Math.max(1, numDrops);
   return { numDrops, valuePerDrop };
 }
@@ -935,8 +938,7 @@ function killMarble(marble, killerId) {
   marble.alive = false;
   
   const dropInfo = calculateBountyDrop(marble, gameConstants);
-  const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants);
-  
+const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants, marble.lengthScore);  
 const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
   console.log(`💀 DEATH DROP: ${marble.name} | lengthScore=${marble.lengthScore} | totalValue=${dropInfo.totalValue} | spawning ${coinsToSpawn} peewees`);
 
