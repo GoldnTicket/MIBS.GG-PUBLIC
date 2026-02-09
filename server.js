@@ -486,7 +486,7 @@ function updateBotAI(bot, delta) {
   if (!bot._aiState) {
     bot._aiState = 'HUNT_COIN';
     bot._stateTimer = 0;
-bot._reactionDelay = 400 + Math.random() * 400; // 400-800ms reaction time
+bot._reactionDelay = 800 + Math.random() * 400; // 400-800ms reaction time
     bot._lastPlayerSeen = null;
     bot._personality = Math.random(); // 0 = passive, 1 = aggressive
     bot._steerSmooth = bot.angle; // Smoothed steering
