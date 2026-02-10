@@ -5,12 +5,12 @@
   "arena": {
     "radius": 3000,
     "diameter": 6000,
-    "spawnMinDistance": 500
+    "spawnMinDistance": 800
   },
   
   "movement": {
-    "normalSpeed": 250,
-    "boostMultiplier": 2.2,
+    "normalSpeed": 150,
+    "boostMultiplier": 1.8,
     "turnRateMaxDegPerSec": 340,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
@@ -21,12 +21,12 @@
 "player": {
   "startLength": 200,
   "startBounty": 1,
-  "widthVsLengthMult": 6.0,
+  "widthVsLengthMult": 3.0,
   "startRadius": 20
 },
   
   "bot": {
-    "count": 20,
+    "count": 30,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
@@ -35,7 +35,7 @@
 "marble": {
   "shooterTargetWidth": 40,
   "radiusPerLength": 0.10,
-  "maxRadius": 200,
+  "maxRadius": 120,
   "spinEnabled": true,
   "spinSpeedMin": 0.0,
   "spinSpeedMax": 2.0,
@@ -51,7 +51,7 @@
     "radius": 20,
     "targetWidth": 40,
     "mass": 1.0,
-    "friction": 0.970,
+    "friction": 0.975,
     "initialRollSpeedMin": 150,
     "initialRollSpeedMax": 250,
     "bounceMultiplier": 1.0,
@@ -104,8 +104,8 @@
   },
   
   "zoom": {
-    "max": 0.9,
-    "min": 0.80,
+    "max": 1.0,
+    "min": 0.60,
     "scoreAtMin": 2000,
     "lerpPer60": 0.55,
     "progressExponent": 5.5
@@ -152,13 +152,12 @@
 "cashout": {
     "tiers": [
       {"threshold": 1, "payout": 0},
-      {"threshold": 2, "payout": 0},
-      {"threshold": 3, "payout": 1},
+      {"threshold": 2, "payout": 1},
       {"threshold": 5, "payout": 2},
       {"threshold": 10, "payout": 4},
       {"threshold": 20, "payout": 7},
-      {"threshold": 50, "payout": 20},
-      {"threshold": 100, "payout": 30},
+      {"threshold": 50, "payout": 22},
+      {"threshold": 100, "payout": 34},
       {"threshold": 200, "payout": 70},
       {"threshold": 300, "payout": 70},
       {"threshold": 400, "payout": 70},
@@ -207,9 +206,9 @@
     {"maxKills": 0, "label": "NOOB"},
     {"maxKills": 5, "label": "Beginner"},
     {"maxKills": 20, "label": "Collector"},
-    {"maxKills": 50, "label": "Master"},
-    {"maxKills": 100, "label": "Champion"},
-    {"maxKills": 999999999, "label": "Legend"}
+    {"maxKills": 50, "label": " Mib Master"},
+    {"maxKills": 100, "label": "Ring Champion"},
+    {"maxKills": 999999999, "label": "Yard Legend"}
   ],
   
 "pickupThemes": {
