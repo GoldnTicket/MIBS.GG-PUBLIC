@@ -1735,6 +1735,40 @@ server.listen(PORT, () => {
   initializeGame();
 });
 
+// ============================================================================
+// YARD BROADCAST — Lobby live stats (every 3 seconds)
+// ============================================================================
+setInterval(() => {
+  const playerCount = Object.keys(gameState.players).length;
+  const botCount = gameState.bots ? gameState.bots.length : 0;
+  const totalPlaying = playerCount + botCount;
+
+  // Build sorted leaderboard from players + bots
+  const allEntities = [
+    ...Object.values(gameState.players).map(p => ({
+      name: p.name,
+      bounty: p.bounty || 0,
+      isBot: false
+    })),
+    ...(gameState.bots || []).map(b => ({
+      name: b.name,
+      bounty: b.bounty || 0,
+      isBot: true
+    }))
+  ].sort((a, b) => b.bounty - a.bounty);
+
+  const top5 = allEntities.slice(0, 5);
+
+  io.emit('yard-update', {
+    playing: totalPlaying,
+    queue: 0,
+    max: 40,
+    totalWon: 0,
+    leaderboard: top5
+  });
+}, 3000);
+
+
 process.on('SIGTERM', () => {
   server.close(() => console.log('Server closed'));
 });
