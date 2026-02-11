@@ -1332,6 +1332,35 @@ _lastAngle: 0,
     console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
   });
 
+// ── AUTH SYNC: Upsert player to Supabase ──
+  socket.on('auth-sync', async (data) => {
+    if (!data || !data.privyId) return;
+    try {
+      const { error } = await supabase
+        .from('players')
+        .upsert({
+          privy_id: data.privyId,
+          name: data.name || 'Anonymous',
+          email: data.email || null,
+          discord_id: data.discordId || null,
+          discord_name: data.discordName || null,
+          wallet_address: data.walletAddress || null,
+        }, { onConflict: 'privy_id' })
+        .select()
+        .single();
+      if (error) {
+        console.error('[Supabase] Upsert failed:', error);
+      } else {
+        if (gameState.players[socket.id]) {
+          gameState.players[socket.id].privyId = data.privyId;
+        }
+        console.log('✅ [Supabase] Player synced:', data.name);
+      }
+    } catch (err) {
+      console.error('[Supabase] auth-sync error:', err);
+    }
+  });
+  
   // ✅ INPUT-BASED with sequence tracking (from Doc 14)
   socket.on('playerInput', (data) => {
     const player = gameState.players[socket.id];
