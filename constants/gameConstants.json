@@ -9,7 +9,7 @@
   },
   
   "movement": {
-    "normalSpeed": 120,
+    "normalSpeed": 250,
     "boostMultiplier": 1.8,
     "turnRateMaxDegPerSec": 340,
     "turnStiffnessPerScale": 0.15,
@@ -48,8 +48,8 @@
   
   "peewee": {
     "growthValue": 1,
-    "radius": 50,
-    "targetWidth": 100,
+    "radius": 30,
+    "targetWidth": 60,
     "mass": 1.0,
     "friction": 0.975,
     "initialRollSpeedMin": 150,
@@ -60,7 +60,7 @@
     "shadowEnabled": true,
     "shadowOffsetY": 14,
     "shadowAlpha": 0.9,
-    "shadowWidthMultiplier": 0.85,
+    "shadowWidthMultiplier": 1.0,
     "spinSpeedMin": 0.01,
     "spinSpeedMax": 2.5,
     "spinSpeedRollMultiplier": 0.10,
@@ -85,7 +85,7 @@
     "alphaEnd": 0,
     "scaleStart": 1.2,
     "scaleEnd": 0.1,
-    "gravity": 20
+    "gravity": 15
   },
   
 "boost": {
@@ -104,7 +104,7 @@
   },
   
   "zoom": {
-    "max": 1.2,
+    "max": 1.0,
     "min": 0.60,
     "scoreAtMin": 2000,
     "lerpPer60": 0.55,
