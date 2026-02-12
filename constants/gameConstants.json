@@ -9,7 +9,7 @@
   },
   
   "movement": {
-    "normalSpeed": 150,
+    "normalSpeed": 120,
     "boostMultiplier": 1.8,
     "turnRateMaxDegPerSec": 340,
     "turnStiffnessPerScale": 0.15,
@@ -19,23 +19,23 @@
   },
   
 "player": {
-  "startLength": 200,
+  "startLength": 100,
   "startBounty": 1,
-  "widthVsLengthMult": 3.0,
+  "widthVsLengthMult": 2.0,
   "startRadius": 20
 },
   
   "bot": {
     "count": 30,
-    "startLength": 80,
+    "startLength": 150,
     "startBounty": 2,
     "startBountyMax": 8
   },
   
 "marble": {
-  "shooterTargetWidth": 40,
-  "radiusPerLength": 0.10,
-  "maxRadius": 120,
+  "shooterTargetWidth": 60,
+  "radiusPerLength": 0.50,
+  "maxRadius": 180,
   "spinEnabled": true,
   "spinSpeedMin": 0.0,
   "spinSpeedMax": 2.0,
@@ -48,8 +48,8 @@
   
   "peewee": {
     "growthValue": 1,
-    "radius": 20,
-    "targetWidth": 40,
+    "radius": 50,
+    "targetWidth": 100,
     "mass": 1.0,
     "friction": 0.975,
     "initialRollSpeedMin": 150,
