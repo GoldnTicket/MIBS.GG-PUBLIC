@@ -8,7 +8,6 @@
 
 require('dotenv').config();
 const express = require('express');
-const { supabase } = require('./supabase-client');
 const app = express();
 
 // CORS middleware
@@ -16,58 +15,8 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
-
-// ── PLAYER PROFILE API ──
-app.get('/api/player-profile', async (req, res) => {
-  const privyId = req.query.privyId;
-  if (!privyId) return res.status(400).json({ error: 'Missing privyId' });
-  try {
-    const { data: player, error } = await supabase
-      .from('players')
-      .select('*')
-      .eq('privy_id', privyId)
-      .single();
-    if (error || !player) return res.status(404).json({ error: 'Player not found' });
-    res.json({
-      id: player.id,
-      name: player.name,
-      email: player.email,
-      discordName: player.discord_name,
-      walletAddress: player.wallet_address,
-      totalKills: player.total_kills || 0,
-      totalDeaths: player.total_deaths || 0,
-      totalWon: player.total_earned || 0,
-      gamesPlayed: player.games_played || 0,
-      totalPlaytimeSec: player.total_playtime_sec || 0,
-      highestBounty: player.highest_bounty || 0,
-      turboTawTokens: player.turbo_taw_tokens || 0,
-      selectedMarble: player.selected_marble || 'GALAXY1',
-    });
-  } catch (err) {
-    console.error('Player profile fetch error:', err);
-    res.status(500).json({ error: 'Internal error' });
-  }
-});
   next();
 });
-
-// ── SAVE PLAYER STATS TO SUPABASE ──
-async function savePlayerStats(player) {
-  if (!player || !player.privyId) return;
-  const playtime = Math.floor((Date.now() - (player.spawnTime || Date.now())) / 1000);
-  try {
-    await supabase.rpc('increment_player_stats', {
-      p_privy_id: player.privyId,
-      p_kills: player.kills || 0,
-      p_playtime: playtime,
-      p_payout: player.totalPayout || 0,
-      p_bounty: player.bounty || 0,
-    });
-    console.log('[Supabase] Stats saved for ' + player.name + ': kills=' + (player.kills||0) + ' payout=$' + (player.totalPayout||0));
-  } catch (err) {
-    console.error('[Supabase] Save stats error:', err);
-  }
-}
 
 const http = require('http');
 const socketIO = require('socket.io');
@@ -1302,7 +1251,6 @@ if (killer.alive) {
   });
   
   // ✅ FIX: DELETE IMMEDIATELY - no setImmediate delay!
-  savePlayerStats(marble);
   delete gameState.players[marble.id];
 }
   
@@ -1436,10 +1384,8 @@ if (typeof data.targetAngle !== 'number' ||
     player.lastUpdate = Date.now();
   });
 
-  socket.on('disconnect', async () => {
+  socket.on('disconnect', () => {
     console.log(`🔌 Player disconnected: ${socket.id.substring(0, 8)}`);
-    const player = gameState.players[socket.id];
-    if (player) await savePlayerStats(player);
     delete gameState.players[socket.id];
     io.emit('playerLeft', { playerId: socket.id });
   });
@@ -1512,7 +1458,7 @@ setInterval(() => {
   tickCounter++;
   frameCount++;
   
-const dt = 1 / TICK_RATE; // ✅ Fixed timestep: 1/60 = 0.01667s
+  const dt = TICK_RATE / 1000; // ✅ Fixed timestep
   
   // ========================================
   // PERFORMANCE MONITORING
@@ -1552,32 +1498,23 @@ const dt = 1 / TICK_RATE; // ✅ Fixed timestep: 1/60 = 0.01667s
     );
     
     // Calculate speed
-    if (!player._boostBlend && player._boostBlend !== 0) player._boostBlend = 0;
-    if (player.boosting) {
-      player._boostBlend = Math.min(1, player._boostBlend + 0.33);
-    } else {
-      player._boostBlend = Math.max(0, player._boostBlend - 0.33);
-    }
-    const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
+const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 1.0) : 1.0;
     const baseSpeed = gameConstants.movement?.normalSpeed || 250;
     const boostMult = gameConstants.movement?.boostMultiplier || 1.6;
-    const speed = (baseSpeed + baseSpeed * (boostMult - 1) * player._boostBlend) * goldenBoost;
+    const speed = (player.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
     
     // Calculate new position
     const newX = player.x + Math.cos(player.angle) * speed * dt;
     const newY = player.y + Math.sin(player.angle) * speed * dt;
     
     // Anti-cheat: max distance check
-// Anti-cheat: compare against PREVIOUS tick's position stored in _lastValidX/Y
-    if (player._lastValidX !== undefined) {
-      const movedSinceLastTick = Math.hypot(newX - player._lastValidX, newY - player._lastValidY);
-      const maxAllowedDistance = speed * dt * 3.0; // Allow 3x for network jitter
-      
-      if (movedSinceLastTick > maxAllowedDistance) {
-        player.x = player._lastValidX;
-        player.y = player._lastValidY;
-        return;
-      }
+    const actualDistance = Math.hypot(newX - player.x, newY - player.y);
+    const maxAllowedDistance = speed * dt * 1.5;
+    
+    if (actualDistance > maxAllowedDistance) {
+      player.x = player._lastValidX;
+      player.y = player._lastValidY;
+      return;
     }
     
     // Check arena bounds
@@ -1626,7 +1563,8 @@ const dt = 1 / TICK_RATE; // ✅ Fixed timestep: 1/60 = 0.01667s
   // 3. UPDATE BOTS
   // ========================================
   for (const bot of gameState.bots) {
-if (bot.alive) updateBotAI(bot, 1000 / TICK_RATE);  }
+    if (bot.alive) updateBotAI(bot, TICK_RATE);
+  }
   
 // ========================================
   // 4. UPDATE PEEWEE PHYSICS
@@ -1802,14 +1740,14 @@ const cleanCoins = gameState.coins.map(c => ({
   }));
   
   io.emit('gameState', {
-serverDeltaMs: 1000 / TICK_RATE,
+    serverDeltaMs: TICK_RATE, // ✅ Fixed timestep, not measured delta
     players: cleanPlayers,
     bots: cleanBots,
     coins: cleanCoins,
     timestamp: now
   });
   
-}, 1000 / TICK_RATE);
+}, TICK_RATE);
 
 // ============================================================================
 // STARTUP
