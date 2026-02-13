@@ -9,8 +9,8 @@
   },
   
   "movement": {
-    "normalSpeed": 250,
-    "boostMultiplier": 1.8,
+    "normalSpeed": 300,
+    "boostMultiplier": 2.0,
     "turnRateMaxDegPerSec": 340,
     "turnStiffnessPerScale": 0.15,
     "boostTurnPenaltyFrac": 0.35,
