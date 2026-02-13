@@ -1507,14 +1507,16 @@ const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 
     const newX = player.x + Math.cos(player.angle) * speed * dt;
     const newY = player.y + Math.sin(player.angle) * speed * dt;
     
-    // Anti-cheat: max distance check
-    const actualDistance = Math.hypot(newX - player.x, newY - player.y);
-    const maxAllowedDistance = speed * dt * 1.5;
-    
-    if (actualDistance > maxAllowedDistance) {
-      player.x = player._lastValidX;
-      player.y = player._lastValidY;
-      return;
+ // Anti-cheat: compare against PREVIOUS tick's position stored in _lastValidX/Y
+    if (player._lastValidX !== undefined) {
+      const movedSinceLastTick = Math.hypot(newX - player._lastValidX, newY - player._lastValidY);
+      const maxAllowedDistance = speed * dt * 3.0; // Allow 3x for network jitter
+      
+      if (movedSinceLastTick > maxAllowedDistance) {
+        player.x = player._lastValidX;
+        player.y = player._lastValidY;
+        return;
+      }
     }
     
     // Check arena bounds
