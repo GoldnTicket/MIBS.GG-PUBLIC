@@ -1512,7 +1512,7 @@ setInterval(() => {
   tickCounter++;
   frameCount++;
   
-const dt = 1 / TICK_RATE; // ✅ Fixed timestep: 1/60 = 0.01667s
+  const dt = TICK_RATE / 1000; // ✅ Fixed timestep
   
   // ========================================
   // PERFORMANCE MONITORING
