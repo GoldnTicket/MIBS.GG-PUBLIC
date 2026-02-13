@@ -1512,7 +1512,7 @@ setInterval(() => {
   tickCounter++;
   frameCount++;
   
-  const dt = TICK_RATE / 1000; // ✅ Fixed timestep
+const dt = 1 / TICK_RATE; // ✅ Fixed timestep: 1/60 = 0.01667s
   
   // ========================================
   // PERFORMANCE MONITORING
@@ -1568,13 +1568,16 @@ setInterval(() => {
     const newY = player.y + Math.sin(player.angle) * speed * dt;
     
     // Anti-cheat: max distance check
-    const actualDistance = Math.hypot(newX - player.x, newY - player.y);
-    const maxAllowedDistance = speed * dt * 1.5;
-    
-    if (actualDistance > maxAllowedDistance) {
-      player.x = player._lastValidX;
-      player.y = player._lastValidY;
-      return;
+// Anti-cheat: compare against PREVIOUS tick's position stored in _lastValidX/Y
+    if (player._lastValidX !== undefined) {
+      const movedSinceLastTick = Math.hypot(newX - player._lastValidX, newY - player._lastValidY);
+      const maxAllowedDistance = speed * dt * 3.0; // Allow 3x for network jitter
+      
+      if (movedSinceLastTick > maxAllowedDistance) {
+        player.x = player._lastValidX;
+        player.y = player._lastValidY;
+        return;
+      }
     }
     
     // Check arena bounds
@@ -1623,8 +1626,7 @@ setInterval(() => {
   // 3. UPDATE BOTS
   // ========================================
   for (const bot of gameState.bots) {
-    if (bot.alive) updateBotAI(bot, TICK_RATE);
-  }
+if (bot.alive) updateBotAI(bot, 1000 / TICK_RATE);  }
   
 // ========================================
   // 4. UPDATE PEEWEE PHYSICS
@@ -1800,14 +1802,14 @@ const cleanCoins = gameState.coins.map(c => ({
   }));
   
   io.emit('gameState', {
-    serverDeltaMs: TICK_RATE, // ✅ Fixed timestep, not measured delta
+serverDeltaMs: 1000 / TICK_RATE,
     players: cleanPlayers,
     bots: cleanBots,
     coins: cleanCoins,
     timestamp: now
   });
   
-}, TICK_RATE);
+}, 1000 / TICK_RATE);
 
 // ============================================================================
 // STARTUP
