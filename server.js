@@ -1458,8 +1458,8 @@ setInterval(() => {
   tickCounter++;
   frameCount++;
   
-  const dt = TICK_RATE / 1000; // ✅ Fixed timestep
-  
+const dt = 1 / TICK_RATE; // ✅ Fixed timestep: 1/60 = 0.01667s
+
   // ========================================
   // PERFORMANCE MONITORING
   // ========================================
@@ -1565,8 +1565,7 @@ const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 
   // 3. UPDATE BOTS
   // ========================================
   for (const bot of gameState.bots) {
-    if (bot.alive) updateBotAI(bot, TICK_RATE);
-  }
+if (bot.alive) updateBotAI(bot, 1000 / TICK_RATE);  }
   
 // ========================================
   // 4. UPDATE PEEWEE PHYSICS
@@ -1742,14 +1741,15 @@ const cleanCoins = gameState.coins.map(c => ({
   }));
   
   io.emit('gameState', {
-    serverDeltaMs: TICK_RATE, // ✅ Fixed timestep, not measured delta
+serverDeltaMs: 1000 / TICK_RATE,
     players: cleanPlayers,
     bots: cleanBots,
     coins: cleanCoins,
     timestamp: now
   });
   
-}, TICK_RATE);
+
+}, 1000 / TICK_RATE);
 
 // ============================================================================
 // STARTUP
