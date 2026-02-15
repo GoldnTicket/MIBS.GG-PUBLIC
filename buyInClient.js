@@ -1,4 +1,7 @@
 
+// (All economy values now in gameConstants.json — no .env overrides needed)
+
+
 // ============================================================
 // FILE 10: buyInClient.js — Client-side $1.10 buy-in flow
 // ============================================================
@@ -178,4 +181,3 @@ class BuyInClient {
     }
   }
 }
-
