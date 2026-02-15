@@ -174,5 +174,3 @@ class PrivyService {
 }
 
 module.exports = PrivyService;
-
-
