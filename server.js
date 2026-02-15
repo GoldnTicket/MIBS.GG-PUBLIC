@@ -35,7 +35,19 @@ const rewards = new TokenRewardSystem(gameConstants);
 const feeManager = new FeeManager(rewards.privy, gameConstants);
 const payouts = new PayoutManager(rewards.privy, gameConstants);
 const spendVerifier = new TokenSpendVerifier(rewards.privy, gameConstants);
+// ── Audit Log + State Backup ──
+const AuditLog = require('./auditLog');
+const StateBackup = require('./stateBackup');
 
+const auditLog = new AuditLog(null, gameConstants);
+const stateBackup = new StateBackup(payouts, feeManager, spendVerifier, null, gameConstants);
+
+// Restore any saved state from last server run
+stateBackup.restore().then(() => {
+  console.log('✅ State restoration complete');
+}).catch(err => {
+  console.log('ℹ️  No state to restore:', err.message);
+});
 
 const killedThisFrame = new Set(); // ✅ FIX: Track kills to prevent double-kill crash
 // ============================================================================
@@ -1946,6 +1958,30 @@ setInterval(() => {
 }, 3000);
 
 
-process.on('SIGTERM', () => {
-  server.close(() => console.log('Server closed'));
-});
+async function gracefulShutdown(signal) {
+  console.log(`🛑 ${signal} received — graceful shutdown...`);
+  
+  // Save state before exit
+  try {
+    await stateBackup.save();
+    console.log('✅ Final state backup saved');
+  } catch (err) {
+    console.error('⚠️  Final backup failed:', err.message);
+  }
+  
+  // Clean up intervals
+  stateBackup.destroy();
+  auditLog.destroy();
+  rewards.destroy();
+  
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+  
+  // Force exit after 5 seconds if something hangs
+  setTimeout(() => process.exit(1), 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
