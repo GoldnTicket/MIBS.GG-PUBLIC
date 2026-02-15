@@ -149,8 +149,7 @@
     "cashoutWidth": 220
   },
 
-//Economy
-
+"economy": {
     "buyIn": {
       "solAmount": 0.008,
       "houseSplitFraction": 0.9091,
@@ -219,6 +218,8 @@
       "commitment": "finalized",
       "minAliveBeforeBountyTransferMs": 30000
     }
+  }
+
 
 
   
