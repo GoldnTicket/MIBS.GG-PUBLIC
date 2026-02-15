@@ -542,16 +542,3 @@ class PayoutManager {
 }
 
 module.exports = PayoutManager;
-
-
-// ============================================================
-// FILE 15: server.js integration — Payout hooks
-// ============================================================
-/*
-
-// --- server.js: Payout hooks ---
-// (rewards, feeManager, payouts, spendVerifier already initialized above)
-
-// Add to .env:
-// DISCORD_PAYOUT_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN
-
