@@ -9,11 +9,11 @@
 // ============================================================
 
 class StateBackup {
-  constructor(payoutManager, feeManager, spendVerifier, database, gameConstants) {
+constructor(payoutManager, feeManager, spendVerifier, database, gameConstants) {
     this.payouts = payoutManager;
     this.fees = feeManager;
     this.spender = spendVerifier;
-    this.db = database;
+    this.db = database || null;
     this.gc = gameConstants;
     this.serverId = process.env.SERVER_ID || 'unknown';
 
@@ -65,7 +65,7 @@ class StateBackup {
 
     // 2. Database backup (if available)
     try {
-      if (this.db.ready) {
+      if (this.db && this.db.ready) {
         // Save each active session
         for (const entry of state.activeSessions) {
           await this.db.saveSession(entry.session, this.serverId);
@@ -89,7 +89,7 @@ class StateBackup {
     // 1. Try database first (shared across servers, more reliable)
     let restored = false;
     try {
-      if (this.db.ready) {
+      if (this.db && this.db.ready) {
         // Restore orphaned sessions from this server
         const sessions = await this.db.getOrphanedSessions(this.serverId);
         if (sessions.length > 0) {
