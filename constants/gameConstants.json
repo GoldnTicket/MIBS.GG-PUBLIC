@@ -148,6 +148,79 @@
     "cashoutY": 16,
     "cashoutWidth": 220
   },
+
+//Economy
+
+    "buyIn": {
+      "solAmount": 0.008,
+      "houseSplitFraction": 0.9091,
+      "creatorSplitFraction": 0.0455,
+      "bountySplitFraction": 0.0454
+    },
+
+    "bountyTransfer": {
+      "normalKillToKiller": 1.0,
+      "goldenKillToKillerBounty": 0.80,
+      "goldenKillToKillerWallet": 0.20,
+      "wallHitToGolden": 1.0,
+      "disconnectToGolden": 1.0
+    },
+
+    "hourlyBountyPrize": {
+      "perPlayContributionSol": 0.000364,
+      "dividedByHours": 24,
+      "minimumPrizeSol": 0.0001
+    },
+
+    "ttawRewards": {
+      "welcomeAirdrop": 3,
+      "killReward": 0.5,
+      "firstKillBonus": 1.0,
+      "streakMultiplierPerKill": 0.25,
+      "survivalPerMinute": 0.05,
+      "cashoutBonusMultiplier": 0.1,
+      "minCashoutScoreForBonus": 100,
+      "dailyEarnCap": 50,
+      "cooldownMs": 5000,
+      "victimSizeBonuses": [
+        { "minSize": 50, "bonus": 0.25 },
+        { "minSize": 200, "bonus": 0.5 },
+        { "minSize": 500, "bonus": 1.0 }
+      ]
+    },
+
+    "perkCosts": {
+      "queue_skip": 1,
+      "priority_queue": 3,
+      "double_xp": 2,
+      "custom_trail": 5,
+      "name_color": 2
+    },
+
+    "payouts": {
+      "queueProcessIntervalMs": 2000,
+      "maxRetriesOnFailure": 3,
+      "stateBackupIntervalMs": 30000,
+      "maxBackupAgeMs": 300000
+    },
+
+    "feeSplitting": {
+      "processIntervalMs": 3600000,
+      "dailyCleanupRetentionHours": 48
+    },
+
+    "broadcasts": {
+      "topBountiesIntervalMs": 5000,
+      "topBountiesCount": 3
+    },
+
+    "security": {
+      "maxBuyInAgeSecs": 300,
+      "commitment": "finalized",
+      "minAliveBeforeBountyTransferMs": 30000
+    }
+
+
   
 "cashout": {
     "tiers": [
