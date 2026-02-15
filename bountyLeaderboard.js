@@ -180,4 +180,3 @@ class BountyLeaderboard {
     if (this.timerEvent) this.timerEvent.destroy();
   }
 }
-
