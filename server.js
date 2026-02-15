@@ -1117,7 +1117,8 @@ function checkCashoutTiers(player) {
         });
         
         console.log(`💰 SAWTOOTH CASHOUT! | ${player.name} | Tier ${player.nextTierIndex}: $${payout} | Bounty: $${bountyBefore.toFixed(2)} → $${player.bounty.toFixed(2)} | Total paid: $${player.totalPayout}`);
-      
+      // ── Immediate backup: money just changed ──
+        stateBackup.saveNow();
 // ── $TTAW: Accrue payout for this tier ──
         if (player.privyId && player._isPaidSession) {
           payouts.accrueCashoutTier(player.privyId, tier.threshold, payout);
@@ -1227,7 +1228,8 @@ if (killer.alive) {
           // ✅ Golden instant payout (BEFORE tier check, since bounty is already reduced)
           if (goldenPayout > 0) {
             killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
-            
+            // ── Immediate backup: golden payout accrued ──
+            stateBackup.saveNow();
             io.to(killer.id).emit('cashout', {
               tiers: [{ amount: goldenPayout, isGolden: true }],
               total: killer.totalPayout,
