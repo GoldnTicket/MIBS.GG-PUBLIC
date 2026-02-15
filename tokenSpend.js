@@ -8,20 +8,29 @@ const { getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
 require('dotenv').config();
 
 class TokenSpendVerifier {
-  constructor(privyService, gameConstants) {
+  constructor(privyService, gameConstants, database, auditLog) {
     this.privy = privyService;
     this.gc = gameConstants;
-    this.connection = new Connection(process.env.SOLANA_RPC_URL, 'confirmed');
+    this.db = database;
+    this.audit = auditLog;
+    this.connection = new Connection(process.env.SOLANA_RPC_URL,
+      this.gc.economy.security.commitment  // 'finalized' from gameConstants
+    );
     this.ttawMint = new PublicKey(process.env.TTAW_MINT_ADDRESS);
 
-    // Track verified spends to prevent replay attacks
-    this.verifiedSignatures = new Set();
+    // In-memory cache (fast check before DB query)
+    this.signatureCache = new Set();
 
     // Perk costs from gameConstants (single source of truth)
     this.perkCosts = this.gc.economy.perkCosts;
 
+    // Max transaction age from gameConstants
+    this.maxAgeSecs = this.gc.economy.security.maxBuyInAgeSecs;
+
     console.log('✅ TokenSpendVerifier initialized');
     console.log(`   Perks: ${Object.keys(this.perkCosts).join(', ')}`);
+    console.log(`   Commitment: ${this.gc.economy.security.commitment}`);
+    console.log(`   Max TX age: ${this.maxAgeSecs}s`);
   }
 
   // ----------------------------------------------------------
@@ -37,24 +46,48 @@ class TokenSpendVerifier {
   // ----------------------------------------------------------
   async verifySpend(txSignature, expectedAmount, privyUserId) {
     try {
-      // 1. Replay protection — has this TX already been claimed?
-      if (this.verifiedSignatures.has(txSignature)) {
+      // 1. Replay protection — check memory cache first, then DB
+      if (this.signatureCache.has(txSignature)) {
+        return { verified: false, reason: 'Transaction already used' };
+      }
+      if (this.db && await this.db.hasSignature(txSignature)) {
+        this.signatureCache.add(txSignature); // Cache for next time
         return { verified: false, reason: 'Transaction already used' };
       }
 
-      // 2. Fetch the transaction from Solana
+      // 2. Fetch the transaction from Solana (finalized commitment)
       const tx = await this.connection.getParsedTransaction(txSignature, {
-        commitment: 'confirmed',
+        commitment: this.gc.economy.security.commitment,
         maxSupportedTransactionVersion: 0
       });
 
       if (!tx) {
-        return { verified: false, reason: 'Transaction not found' };
+        return { verified: false, reason: 'Transaction not found (not yet finalized)' };
       }
 
       // 3. Check it was successful
       if (tx.meta.err) {
         return { verified: false, reason: 'Transaction failed on-chain' };
+      }
+
+      // 4. Check transaction age
+      if (tx.blockTime) {
+        const ageSecs = Math.floor(Date.now() / 1000) - tx.blockTime;
+        if (ageSecs > this.maxAgeSecs) {
+          return { verified: false, reason: `Transaction too old (${ageSecs}s, max ${this.maxAgeSecs}s)` };
+        }
+      }
+
+      // 5. Verify the SENDER matches this player's wallet
+      const playerWallet = await this.privy.getUserWalletAddress(privyUserId);
+      if (!playerWallet) {
+        return { verified: false, reason: 'Player wallet not found' };
+      }
+      const signers = tx.transaction.message.accountKeys
+        .filter(k => k.signer)
+        .map(k => k.pubkey.toBase58());
+      if (!signers.includes(playerWallet)) {
+        return { verified: false, reason: 'Transaction not signed by player wallet' };
       }
 
       // 4. Find the SPL token transfer instruction
@@ -109,11 +142,14 @@ class TokenSpendVerifier {
         };
       }
 
-      // 7. All checks passed!
-      this.verifiedSignatures.add(txSignature);
+      // 7. All checks passed! Persist to DB + cache
+      this.signatureCache.add(txSignature);
+      if (this.db) {
+        await this.db.addSignature(txSignature, privyUserId, expectedRaw, 'spend');
+      }
 
-      console.log(`✅ Verified spend: ${expectedAmount} $TTAW from ${privyUserId}`);
-      console.log(`   TX: ${txSignature}`);
+      console.log(`✅ Verified spend: ${expectedAmount} $TTAW from user ${privyUserId.slice(0, 12)}...`);
+      console.log(`   TX: ${txSignature.slice(0, 20)}...`);
 
       return {
         verified: true,
@@ -165,13 +201,12 @@ class TokenSpendVerifier {
     return this.perkCosts[perkId] || null;
   }
 
-  // Cleanup old signatures periodically (prevent memory leak)
+  // Cleanup (DB handles TTL, just clear memory cache)
   pruneOldSignatures() {
-    // In production, use Redis with TTL instead
-    if (this.verifiedSignatures.size > 10000) {
-      this.verifiedSignatures.clear();
-      console.log('🧹 Pruned verified signatures cache');
+    if (this.signatureCache.size > 10000) {
+      this.signatureCache.clear();
     }
+    // DB cleanup handled by Database.pruneOldSignatures()
   }
 }
 
