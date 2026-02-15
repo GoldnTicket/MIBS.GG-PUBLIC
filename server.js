@@ -24,6 +24,19 @@ const socketIO = require('socket.io');
 const { wrapAngle, calculateMarbleRadius, calculateTurnStep } = require('./shared/physics.server.js');
 const PathBuffer = require('./shared/PathBuffer.server.js');
 const gameConstants = require('./constants/gameConstants.json');
+
+// ── $TTAW Token Reward System ──
+const TokenRewardSystem = require('./tokenRewards');
+const FeeManager = require('./feeManager');
+const PayoutManager = require('./payoutManager');
+const TokenSpendVerifier = require('./tokenSpend');
+
+const rewards = new TokenRewardSystem(gameConstants);
+const feeManager = new FeeManager(rewards.privy, gameConstants);
+const payouts = new PayoutManager(rewards.privy, gameConstants);
+const spendVerifier = new TokenSpendVerifier(rewards.privy, gameConstants);
+
+
 const killedThisFrame = new Set(); // ✅ FIX: Track kills to prevent double-kill crash
 // ============================================================================
 // CONFIGURATION
@@ -1092,6 +1105,18 @@ function checkCashoutTiers(player) {
         });
         
         console.log(`💰 SAWTOOTH CASHOUT! | ${player.name} | Tier ${player.nextTierIndex}: $${payout} | Bounty: $${bountyBefore.toFixed(2)} → $${player.bounty.toFixed(2)} | Total paid: $${player.totalPayout}`);
+      
+// ── $TTAW: Accrue payout for this tier ──
+        if (player.privyId && player._isPaidSession) {
+          payouts.accrueCashoutTier(player.privyId, tier.threshold, payout);
+        }
+        // ── $TTAW: Award tier bonus tokens ──
+        if (player.privyId) {
+          const tierBonus = payout * (gameConstants.economy?.rewards?.cashoutBonusRate || 0.10);
+          rewards.queueReward(player.privyId, tierBonus, `cashout_tier_${player.nextTierIndex}`);
+        }
+
+
       }
       
       player.nextTierIndex++;
@@ -1163,6 +1188,7 @@ for (let i = 0; i < coinsToSpawn; i++) {
   
   if (killerId) {
     killer = gameState.players[killerId];
+    const socket_killer_privyId = killer?.privyId || null;
     if (!killer) killer = gameState.bots.find(b => b.id === killerId);
     
     if (killer) {
@@ -1211,6 +1237,12 @@ if (killer.alive) {
           }
           
           // Send kill notification
+
+// ── $TTAW: Award kill tokens ──
+          if (socket_killer_privyId) {
+            rewards.handleKill(socket_killer_privyId);
+          }
+
           io.to(killer.id).emit('playerKill', {
             killerId: killer.id,
             victimId: marble.id,
@@ -1330,10 +1362,118 @@ _lastAngle: 0,
     });
     
     console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
+
+// ── $TTAW: Start payout session if authenticated ──
+    if (socket.privyUserId) {
+      payouts.startSession(
+        socket.privyUserId,
+        socket.id,
+        player.name,
+        socket.isPaidSession || false
+      );
+      // Award passive survival tokens (0.05 $TTAW/min)
+      socket._survivalInterval = setInterval(() => {
+        if (gameState.players[socket.id]?.alive) {
+          rewards.handleSurvivalTick(socket.privyUserId);
+        }
+      }, 60000);
+    }
+
+
   });
 
 // ── AUTH SYNC: Upsert player to Supabase ──
-  socket.on('auth-sync', async (data) => {
+  
+// ── $TTAW: Authenticate with Privy ──
+  socket.on('authenticate', async (data) => {
+    if (!data || !data.privyToken) return;
+    try {
+      const claims = await rewards.privy.privy.verifyAuthToken(data.privyToken);
+      socket.privyUserId = claims.userId;
+
+      // Check for welcome airdrop (3 $TTAW for new Discord-linked users)
+      const airdropped = await rewards.handleNewUser(claims.userId);
+      if (airdropped) {
+        socket.emit('notification', {
+          type: 'airdrop',
+          message: '🎉 Welcome! You received 3 $TTAW tokens!',
+          amount: gameConstants.economy?.rewards?.welcomeAirdrop || 3
+        });
+      }
+
+      // Send current token balance
+      const balance = await rewards.privy.getTokenBalance(claims.userId);
+      socket.emit('tokenBalance', { balance });
+      console.log(`🔐 Player authenticated: ${claims.userId}`);
+    } catch (err) {
+      console.error('❌ Auth failed:', err.message);
+      socket.emit('authError', { message: 'Authentication failed' });
+    }
+  });
+
+  // ── $TTAW: Buy-in (paid play) ──
+  socket.on('buyIn', async (data) => {
+    if (!socket.privyUserId) {
+      socket.emit('buyInError', { message: 'Not authenticated' });
+      return;
+    }
+    try {
+      const buyInTotal = gameConstants.economy?.buyIn?.total || 1.10;
+      // Verify on-chain payment here (future: Solana TX verification)
+      socket.isPaidSession = true;
+      feeManager.recordBuyIn(buyInTotal);
+      socket.emit('buyInConfirmed', { amount: buyInTotal });
+      console.log(`💵 Buy-in confirmed: ${socket.privyUserId} ($${buyInTotal})`);
+    } catch (err) {
+      socket.emit('buyInError', { message: err.message });
+    }
+  });
+
+  // ── $TTAW: Free play (no buy-in) ──
+  socket.on('freePlay', () => {
+    socket.isPaidSession = false;
+    socket.emit('freePlayConfirmed');
+  });
+
+  // ── $TTAW: Spend token for perk (e.g. queue skip) ──
+  socket.on('requestPerk', async (data) => {
+    if (!socket.privyUserId || !data?.perkId || !data?.txSignature) return;
+    try {
+      const perkCost = gameConstants.economy?.perkCosts?.[data.perkId];
+      if (!perkCost) {
+        socket.emit('perkError', { message: 'Unknown perk' });
+        return;
+      }
+      const verified = await spendVerifier.verifySpend(data.txSignature, socket.privyUserId, perkCost);
+      if (verified) {
+        socket.emit('perkGranted', { perkId: data.perkId });
+        console.log(`🎫 Perk granted: ${data.perkId} for ${socket.privyUserId}`);
+      } else {
+        socket.emit('perkError', { message: 'Transaction verification failed' });
+      }
+    } catch (err) {
+      socket.emit('perkError', { message: err.message });
+    }
+  });
+
+  // ── $TTAW: Get token balance ──
+  socket.on('getTokenBalance', async () => {
+    if (!socket.privyUserId) return;
+    try {
+      const balance = await rewards.privy.getTokenBalance(socket.privyUserId);
+      socket.emit('tokenBalance', { balance });
+    } catch (err) {
+      socket.emit('tokenBalance', { balance: 0 });
+    }
+  });
+
+  // ── $TTAW: Discord notification preference ──
+  socket.on('setNotificationPref', (data) => {
+    if (!socket.privyUserId) return;
+    payouts.setNotificationPreference(socket.privyUserId, !!data?.enabled);
+  });
+
+socket.on('auth-sync', async (data) => {
     if (!data || !data.privyId) return;
     try {
       const { error } = await supabase
@@ -1386,6 +1526,12 @@ if (typeof data.targetAngle !== 'number' ||
 
   socket.on('disconnect', () => {
     console.log(`🔌 Player disconnected: ${socket.id.substring(0, 8)}`);
+    // ── $TTAW: End payout session + cleanup ──
+    if (socket._survivalInterval) clearInterval(socket._survivalInterval);
+    if (socket.privyUserId) {
+      payouts.endSession(socket.privyUserId, 'disconnect');
+      rewards.handleDeath(socket.privyUserId);
+    }
     delete gameState.players[socket.id];
     io.emit('playerLeft', { playerId: socket.id });
   });
