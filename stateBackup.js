@@ -29,7 +29,14 @@ constructor(payoutManager, feeManager, spendVerifier, database, gameConstants) {
 
     console.log(`✅ StateBackup initialized (every ${cfg.stateBackupIntervalMs / 1000}s)`);
   }
-
+// ── Event-driven save: call this whenever money changes ──
+  saveNow() {
+    try {
+      this.save();
+    } catch (err) {
+      console.error(`⚠️  Immediate backup failed: ${err.message}`);
+    }
+  }
   // ----------------------------------------------------------
   // Save current state to JSON + DB
   // ----------------------------------------------------------
