@@ -60,11 +60,39 @@ class FeeManager {
     this.playLog = [];              // { timestamp, playerId }
     this.bountyKills = new Map();   // playerId → kill count (resets hourly)
 
-    // SOL/USD price cache (refresh periodically)
+    // SOL price cache (for DISPLAY ONLY — transactions use fixed SOL amounts)
     this.solPriceUsd = 0;
-    this.lastPriceUpdate = 0;
+    this.updateSolPrice(); // For UI display, not transactions
+    this.priceInterval = setInterval(() => this.updateSolPrice(), 300000);
 
-    // Schedule hourly tasks
+    // Initial price fetch
+    this.updateSolPrice();
+
+    console.log('✅ FeeManager initialized (fixed SOL amounts, no oracle dependency)');
+    const buyInSol = buyIn.solAmount;
+    console.log(`   Buy-in: ${buyInSol} SOL`);
+    console.log(`   Split: ${(buyIn.houseSplitFraction * 100).toFixed(1)}% house / ${(buyIn.creatorSplitFraction * 100).toFixed(1)}% creator / ${(buyIn.bountySplitFraction * 100).toFixed(1)}% bounty`);
+  }
+
+  async updateSolPrice() {
+    // DISPLAY ONLY — used to show approximate USD on the client
+    // Transactions always use fixed SOL amounts from gameConstants
+    try {
+      const fetch = (await import('node-fetch')).default;
+      const res = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'
+      );
+      const data = await res.json();
+      this.solPriceUsd = data.solana.usd;
+    } catch {
+      if (this.solPriceUsd === 0) this.solPriceUsd = 150;
+    }
+  }
+
+  // Get approximate USD value (display only)
+  lamportsToApproxUsd(lamports) {
+    return (lamports / LAMPORTS_PER_SOL) * this.solPriceUsd;
+  }
     this.hourlyInterval = setInterval(() => this.runHourlyTasks(), timing.processIntervalMs);
     // Schedule daily cleanup
     this.dailyInterval = setInterval(() => this.runDailyCleanup(), timing.dailyCleanupRetentionHours * 60 * 60 * 1000 / 2);
@@ -162,8 +190,10 @@ class FeeManager {
   // ----------------------------------------------------------
   calculateHourlyBountyPrize() {
     const plays24h = this.getPlaysLast24Hours();
-    const prize = (this.bountyPrizeConfig.perPlay * plays24h) / this.bountyPrizeConfig.divideBy;
-    return prize; // in USD
+    const prizeLamports = Math.floor(
+      (this.bountyPrizeConfig.perPlayLamports * plays24h) / this.bountyPrizeConfig.divideBy
+    );
+    return prizeLamports; // in lamports
   }
 
   // ----------------------------------------------------------
@@ -385,3 +415,4 @@ class FeeManager {
 }
 
 module.exports = FeeManager;
+
