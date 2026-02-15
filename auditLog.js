@@ -15,8 +15,8 @@ const fs = require('fs');
 const path = require('path');
 
 class AuditLog {
-  constructor(database, gameConstants) {
-    this.db = database;
+constructor(database, gameConstants) {
+    this.db = database || null;
     this.gc = gameConstants;
     this.serverId = process.env.SERVER_ID || 'unknown';
 
@@ -59,7 +59,7 @@ class AuditLog {
 
     // 2. Write to database (async, non-blocking)
     try {
-      if (this.db.ready) {
+      if (this.db && this.db.ready) {
         await this.db.pool.query(
           `INSERT INTO transaction_log
            (type, player_id, player_name, amount_sol, amount_lamports, tx_signature, details, server_id)
