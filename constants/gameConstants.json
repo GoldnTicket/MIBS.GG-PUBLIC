@@ -196,11 +196,12 @@
       "name_color": 2
     },
 
-    "payouts": {
+"payouts": {
       "queueProcessIntervalMs": 2000,
       "maxRetriesOnFailure": 3,
       "stateBackupIntervalMs": 30000,
-      "maxBackupAgeMs": 300000
+      "maxBackupAgeMs": 300000,
+      "solPriceRefreshMs": 300000
     },
 
     "feeSplitting": {
@@ -218,7 +219,7 @@
       "commitment": "finalized",
       "minAliveBeforeBountyTransferMs": 30000
     }
-  }
+  },
 
 
 
