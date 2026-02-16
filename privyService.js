@@ -25,13 +25,11 @@ class PrivyService {
     this.devWallet = process.env.DEV_WALLET_ADDRESS || null;
 
     // ── Initialize Privy (new SDK) ──
-    this.privy = new PrivyClient(
-      process.env.PRIVY_APP_ID,
-      process.env.PRIVY_APP_SECRET,
-      {
-        authorizationPrivateKey: process.env.PRIVY_AUTHORIZATION_KEY
-      }
-    );
+ this.privy = new PrivyClient({
+      appId: process.env.PRIVY_APP_ID,
+      appSecret: process.env.PRIVY_APP_SECRET,
+      authorizationPrivateKey: process.env.PRIVY_AUTHORIZATION_KEY
+    });
 
     // ── Solana connection ──
     this.connection = new Connection(
