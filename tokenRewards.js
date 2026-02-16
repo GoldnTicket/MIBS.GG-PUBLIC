@@ -1,36 +1,37 @@
-
 // ============================================================
-// FILE 3: tokenRewards.js — Reward rules engine
+// tokenRewards.js — Reward rules engine
+// ============================================================
+// Fixed: Safety checks (LIVE_PAYMENTS/DEV_BYPASS) inherited
+//        from privyService.sendTokens() — no duplicate gates needed
+// Fixed: processQueue logs clearly in test mode
 // ============================================================
 
 const PrivyService = require('./privyService');
 
 class TokenRewardSystem {
   constructor(gameConstants) {
-    this.privy = new PrivyService();
+    this.privy = new PrivyService();  // ← privyService handles safety gates internally
     this.gc = gameConstants;
     const cfg = this.gc.economy.ttawRewards;
 
-    // ----------------------------------------------------------
     // REWARD CONFIGURATION — All values from gameConstants.json
-    // ----------------------------------------------------------
     this.config = {
-      welcomeAirdrop:     cfg.welcomeAirdrop,
-      killReward:         cfg.killReward,
-      cashoutMultiplier:  cfg.cashoutBonusMultiplier,
-      survivalPerMinute:  cfg.survivalPerMinute,
-      firstKillBonus:     cfg.firstKillBonus,
-      streakMultiplier:   cfg.streakMultiplierPerKill,
-      dailyEarnCap:       cfg.dailyEarnCap,
-      minCashoutForBonus: cfg.minCashoutScoreForBonus,
-      cooldownMs:         cfg.cooldownMs,
+      welcomeAirdrop:     cfg.welcomeAirdrop,       // 3
+      killReward:         cfg.killReward,            // 0.5
+      cashoutMultiplier:  cfg.cashoutBonusMultiplier, // 0.1
+      survivalPerMinute:  cfg.survivalPerMinute,     // 0.05
+      firstKillBonus:     cfg.firstKillBonus,        // 1.0
+      streakMultiplier:   cfg.streakMultiplierPerKill, // 0.25
+      dailyEarnCap:       cfg.dailyEarnCap,          // 50
+      minCashoutForBonus: cfg.minCashoutScoreForBonus, // 100
+      cooldownMs:         cfg.cooldownMs,            // 5000
       victimSizeBonuses:  cfg.victimSizeBonuses,
     };
 
-    // In-memory tracking (move to Redis/DB for production)
-    this.playerData = new Map(); // privyUserId → { dailyEarned, lastReward, kills, ... }
-    this.airdropClaimed = new Set(); // Track who already got welcome airdrop
-    this.transferQueue = [];     // Batched transfers
+    // In-memory tracking
+    this.playerData = new Map();
+    this.airdropClaimed = new Set();
+    this.transferQueue = [];
     this.isProcessing = false;
 
     // Process transfer queue every 10 seconds
@@ -40,6 +41,7 @@ class TokenRewardSystem {
     console.log(`   Welcome airdrop: ${this.config.welcomeAirdrop} $TTAW`);
     console.log(`   Kill reward: ${this.config.killReward} $TTAW`);
     console.log(`   Daily cap: ${this.config.dailyEarnCap} $TTAW`);
+    console.log(`   Payments mode: ${this.privy.livePayments ? 'LIVE' : 'TEST'}`);
   }
 
   // ----------------------------------------------------------
@@ -56,7 +58,6 @@ class TokenRewardSystem {
       });
     }
     const data = this.playerData.get(privyUserId);
-    // Reset daily cap at midnight
     const today = new Date().toDateString();
     if (data.dailyResetDate !== today) {
       data.dailyEarned = 0;
@@ -84,22 +85,21 @@ class TokenRewardSystem {
   // Queue a reward (batched for efficiency)
   // ----------------------------------------------------------
   queueReward(privyUserId, amount, reason) {
+    if (!privyUserId) return false;
+
     const check = this.canReward(privyUserId);
     if (!check.allowed) {
       console.log(`⏸️  Reward blocked for ${privyUserId}: ${check.reason}`);
       return false;
     }
 
-    // Cap to daily limit
     const data = this.getPlayerData(privyUserId);
     const cappedAmount = Math.min(amount, this.config.dailyEarnCap - data.dailyEarned);
     if (cappedAmount <= 0) return false;
 
-    // Update tracking
     data.dailyEarned += cappedAmount;
     data.lastRewardTime = Date.now();
 
-    // Add to queue
     this.transferQueue.push({
       privyUserId,
       amount: cappedAmount,
@@ -113,16 +113,16 @@ class TokenRewardSystem {
 
   // ----------------------------------------------------------
   // Process the transfer queue (runs every 10s)
+  // Safety: privyService.sendTokens() handles LIVE_PAYMENTS check
   // ----------------------------------------------------------
   async processQueue() {
     if (this.isProcessing || this.transferQueue.length === 0) return;
     this.isProcessing = true;
 
-    // Grab current batch
-    const batch = this.transferQueue.splice(0, 20); // Process up to 20 at a time
+    const batch = this.transferQueue.splice(0, 20);
     console.log(`\n🔄 Processing ${batch.length} token transfers...`);
 
-    // Aggregate by user (combine multiple small rewards)
+    // Aggregate by user
     const aggregated = new Map();
     for (const item of batch) {
       if (aggregated.has(item.privyUserId)) {
@@ -138,7 +138,7 @@ class TokenRewardSystem {
       }
     }
 
-    // Execute transfers
+    // Execute transfers (privyService handles live/test mode internally)
     for (const [userId, transfer] of aggregated) {
       try {
         const walletAddress = await this.privy.getUserWalletAddress(userId);
@@ -151,11 +151,11 @@ class TokenRewardSystem {
         const result = await this.privy.sendTokens(walletAddress, transfer.amount, memo);
 
         if (result.success) {
-          console.log(`✅ Paid ${transfer.amount} $TTAW → ${userId} (${memo})`);
+          const modeTag = result.testMode ? ' [TEST]' : '';
+          console.log(`✅ Paid ${transfer.amount} $TTAW → ${userId} (${memo})${modeTag}`);
         } else {
           console.log(`❌ Failed: ${result.error}`);
-          // Re-queue failed transfers (up to 3 retries)
-          // You'd want retry logic here in production
+          // TODO: Add retry logic for production
         }
       } catch (err) {
         console.error(`❌ Transfer error: ${err.message}`);
@@ -166,34 +166,21 @@ class TokenRewardSystem {
   }
 
   // ==========================================================
-  //  REWARD EVENT HANDLERS — Hook these into your server.js
+  //  REWARD EVENT HANDLERS
   // ==========================================================
 
-  // ----------------------------------------------------------
   // 1. WELCOME AIRDROP — New user with Discord linked
-  // ----------------------------------------------------------
   async handleNewUser(privyUserId) {
-    // Check if already claimed
-    if (this.airdropClaimed.has(privyUserId)) {
-      console.log(`ℹ️  User ${privyUserId} already claimed welcome airdrop`);
-      return false;
-    }
+    if (!privyUserId) return false;
+    if (this.airdropClaimed.has(privyUserId)) return false;
 
-    // Verify Discord is linked
     const hasDiscord = await this.privy.hasDiscordLinked(privyUserId);
-    if (!hasDiscord) {
-      console.log(`ℹ️  User ${privyUserId} has no Discord linked, no airdrop`);
-      return false;
-    }
+    if (!hasDiscord) return false;
 
-    // Get wallet
     const wallet = await this.privy.getUserWalletAddress(privyUserId);
-    if (!wallet) {
-      console.log(`⚠️  User ${privyUserId} has no wallet yet`);
-      return false;
-    }
+    if (!wallet) return false;
 
-    // Send welcome airdrop directly (don't queue, instant gratification!)
+    // Send directly (instant gratification, not queued)
     const result = await this.privy.sendTokens(
       wallet,
       this.config.welcomeAirdrop,
@@ -208,27 +195,22 @@ class TokenRewardSystem {
     return false;
   }
 
-  // ----------------------------------------------------------
-  // 2. KILL REWARD — Player eliminates another marble
-  // ----------------------------------------------------------
+  // 2. KILL REWARD
   handleKill(privyUserId, victimSize = 0) {
+    if (!privyUserId) return false;
     const data = this.getPlayerData(privyUserId);
 
-    // Base kill reward
     let reward = this.config.killReward;
 
-    // First kill bonus
     if (data.sessionKills === 0) {
       reward += this.config.firstKillBonus;
     }
 
-    // Kill streak multiplier
     data.killStreak++;
     data.sessionKills++;
     const streakBonus = (data.killStreak - 1) * this.config.streakMultiplier;
     reward += streakBonus;
 
-    // Bigger victims = more reward (from gameConstants)
     for (const tier of this.config.victimSizeBonuses) {
       if (victimSize > tier.minSize) reward += tier.bonus;
     }
@@ -237,10 +219,9 @@ class TokenRewardSystem {
     return this.queueReward(privyUserId, reward, reason);
   }
 
-  // ----------------------------------------------------------
-  // 3. CASHOUT BONUS — Player cashes out successfully
-  // ----------------------------------------------------------
+  // 3. CASHOUT BONUS
   handleCashout(privyUserId, cashoutScore, cashoutValue) {
+    if (!privyUserId) return false;
     if (cashoutScore < this.config.minCashoutForBonus) return false;
 
     const reward = cashoutValue * this.config.cashoutMultiplier;
@@ -248,11 +229,9 @@ class TokenRewardSystem {
     return this.queueReward(privyUserId, reward, reason);
   }
 
-  // ----------------------------------------------------------
-  // 4. SURVIVAL REWARD — Passive earn for staying alive
-  // ----------------------------------------------------------
+  // 4. SURVIVAL REWARD
   handleSurvivalTick(privyUserId, aliveMinutes) {
-    // Only reward every full minute
+    if (!privyUserId) return false;
     if (aliveMinutes < 1 || aliveMinutes % 1 !== 0) return false;
 
     const reward = this.config.survivalPerMinute;
@@ -260,19 +239,16 @@ class TokenRewardSystem {
     return this.queueReward(privyUserId, reward, reason);
   }
 
-  // ----------------------------------------------------------
   // 5. DEATH — Reset streak
-  // ----------------------------------------------------------
   handleDeath(privyUserId) {
+    if (!privyUserId) return;
     const data = this.getPlayerData(privyUserId);
     data.killStreak = 0;
-    // Don't reset sessionKills — that tracks total for the session
   }
 
-  // ----------------------------------------------------------
-  // 6. CUSTOM EVENT — For future game modes, achievements, etc.
-  // ----------------------------------------------------------
+  // 6. CUSTOM EVENT
   handleCustomReward(privyUserId, amount, reason) {
+    if (!privyUserId) return false;
     return this.queueReward(privyUserId, amount, reason);
   }
 
@@ -285,14 +261,13 @@ class TokenRewardSystem {
       houseBalance,
       queueLength: this.transferQueue.length,
       trackedPlayers: this.playerData.size,
-      airdropsGiven: this.airdropClaimed.size
+      airdropsGiven: this.airdropClaimed.size,
+      livePayments: this.privy.livePayments
     };
   }
 
-  // Cleanup
   destroy() {
     clearInterval(this.queueInterval);
-    // Process remaining queue
     this.processQueue();
   }
 }

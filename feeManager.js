@@ -1,21 +1,17 @@
-
 // ============================================================
-// FILE 8: feeManager.js — Buy-in fee splitting & bounty prize
+// feeManager.js — Buy-in fee splitting & bounty prize
+// ============================================================
+// Fixed: Property names match gameConstants.json exactly
+// Fixed: Uses privyService.sendSol() instead of raw Privy API
 // ============================================================
 //
-// Buy-in breakdown per play ($1.10 SOL equivalent):
-//   $1.00 → House Wallet    (game payouts / cashout pool)
-//   $0.05 → Creator Wallet  (profit, marketing, dev costs)
-//   $0.05 → Bounty Pool     (hourly most-kills prize)
-//
-// Hourly Bounty Prize Formula:
-//   prize = (0.05 × totalPlaysLast24hrs) / 24
-//
-// Fee splitting runs on a scheduled basis (hourly/daily)
-// rather than per-transaction, to save on Solana TX fees.
+// Buy-in breakdown per play (0.008 SOL from gameConstants):
+//   90.91% → House Wallet   (game payouts / cashout pool)
+//    4.55% → Creator Wallet  (profit, marketing, dev costs)
+//    4.54% → Bounty Pool     (hourly most-kills prize)
 // ============================================================
 
-const { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } = require('@solana/web3.js');
+const { Connection, PublicKey, LAMPORTS_PER_SOL } = require('@solana/web3.js');
 require('dotenv').config();
 
 class FeeManager {
@@ -28,156 +24,89 @@ class FeeManager {
     this.creatorWalletAddress = process.env.CREATOR_WALLET_ADDRESS;
     this.houseWalletId = process.env.HOUSE_WALLET_ID;
 
-    // Fee structure from gameConstants (single source of truth)
+    // ── Fee structure from gameConstants (CORRECT property names) ──
     const buyIn = this.gc.economy.buyIn;
     this.fees = {
-      totalBuyIn:    buyIn.total,
-      toHouse:       buyIn.houseSplit,
-      toCreator:     buyIn.creatorSplit,
-      toBountyPool:  buyIn.bountySplit,
+      totalBuyInSol:     buyIn.solAmount,          // 0.008 SOL
+      houseFraction:     buyIn.houseSplitFraction,  // 0.9091
+      creatorFraction:   buyIn.creatorSplitFraction, // 0.0455
+      bountyFraction:    buyIn.bountySplitFraction,  // 0.0454
     };
 
-    // Hourly prize config from gameConstants
+    // ── Hourly prize config (CORRECT property names) ──
     const hbp = this.gc.economy.hourlyBountyPrize;
     this.bountyPrizeConfig = {
-      perPlay:     hbp.perPlayContribution,
-      divideBy:    hbp.dividedByHours,
-      minPrize:    hbp.minimumPrizeUsd,
+      perPlaySol:  hbp.perPlayContributionSol, // 0.000364 SOL
+      divideBy:    hbp.dividedByHours,         // 24
+      minPrizeSol: hbp.minimumPrizeSol,        // 0.0001
     };
 
-    // Timing from gameConstants
+    // ── Timing from gameConstants ──
     const timing = this.gc.economy.feeSplitting;
 
     // ----------------------------------------------------------
-    // In-memory tracking (move to DB for production persistence)
+    // In-memory tracking
     // ----------------------------------------------------------
-
-    // Buy-in ledger: tracks accumulated fees to split
-    this.pendingCreatorFees = 0;   // Accumulated $0.05 per play (SOL)
-    this.pendingBountyFees = 0;    // Accumulated $0.05 per play (SOL)
-
-    // Play tracking for bounty prize calculation
+    this.pendingCreatorFees = 0;   // Accumulated SOL for creator
+    this.pendingBountyFees = 0;    // Accumulated SOL for bounty pool
     this.playLog = [];              // { timestamp, playerId }
     this.bountyKills = new Map();   // playerId → kill count (resets hourly)
 
-    // SOL price cache (for DISPLAY ONLY — transactions use fixed SOL amounts)
+    // SOL price cache (DISPLAY ONLY — transactions use fixed SOL amounts)
     this.solPriceUsd = 0;
-    this.updateSolPrice(); // For UI display, not transactions
-    this.priceInterval = setInterval(() => this.updateSolPrice(), 300000);
+    this.lastPriceUpdate = 0;
 
-    // Initial price fetch
+    // Schedule hourly fee processing
+    this.hourlyInterval = setInterval(
+      () => this.runHourlyTasks(),
+      timing.processIntervalMs  // 3600000 = 1 hour
+    );
+
+    // Schedule daily cleanup
+    this.dailyInterval = setInterval(
+      () => this.runDailyCleanup(),
+      timing.dailyCleanupRetentionHours * 60 * 60 * 1000 / 2
+    );
+
+    // Fetch SOL price for display
+    this.priceInterval = setInterval(() => this.updateSolPrice(), 300000);
     this.updateSolPrice();
 
     console.log('✅ FeeManager initialized (fixed SOL amounts, no oracle dependency)');
-    const buyInSol = buyIn.solAmount;
-    console.log(`   Buy-in: ${buyInSol} SOL`);
-    console.log(`   Split: ${(buyIn.houseSplitFraction * 100).toFixed(1)}% house / ${(buyIn.creatorSplitFraction * 100).toFixed(1)}% creator / ${(buyIn.bountySplitFraction * 100).toFixed(1)}% bounty`);
-  }
-
-  async updateSolPrice() {
-    // DISPLAY ONLY — used to show approximate USD on the client
-    // Transactions always use fixed SOL amounts from gameConstants
-    try {
-      const fetch = (await import('node-fetch')).default;
-      const res = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'
-      );
-      const data = await res.json();
-      this.solPriceUsd = data.solana.usd;
-    } catch {
-      if (this.solPriceUsd === 0) this.solPriceUsd = 150;
-    }
-  }
-
-  // Get approximate USD value (display only)
-  lamportsToApproxUsd(lamports) {
-    return (lamports / LAMPORTS_PER_SOL) * this.solPriceUsd;
-  }
-    this.hourlyInterval = setInterval(() => this.runHourlyTasks(), timing.processIntervalMs);
-    // Schedule daily cleanup
-    this.dailyInterval = setInterval(() => this.runDailyCleanup(), timing.dailyCleanupRetentionHours * 60 * 60 * 1000 / 2);
-
-    // Initial price fetch
-    this.updateSolPrice();
-
-    console.log('✅ FeeManager initialized');
-    console.log(`   Buy-in: ${this.fees.totalBuyIn}`);
-    console.log(`   Split: ${this.fees.toHouse} house / ${this.fees.toCreator} creator / ${this.fees.toBountyPool} bounty`);
+    console.log(`   Buy-in: ${this.fees.totalBuyInSol} SOL`);
+    console.log(`   Split: ${(this.fees.houseFraction * 100).toFixed(1)}% house / ${(this.fees.creatorFraction * 100).toFixed(1)}% creator / ${(this.fees.bountyFraction * 100).toFixed(1)}% bounty`);
   }
 
   // ----------------------------------------------------------
-  // Fetch current SOL/USD price (for converting $ fees to SOL)
-  // ----------------------------------------------------------
-  async updateSolPrice() {
-    try {
-      // Use a simple price API — CoinGecko free tier
-      const fetch = (await import('node-fetch')).default;
-      const res = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'
-      );
-      const data = await res.json();
-      this.solPriceUsd = data.solana.usd;
-      this.lastPriceUpdate = Date.now();
-      console.log(`💱 SOL price updated: ${this.solPriceUsd}`);
-    } catch (err) {
-      console.error(`⚠️  Price fetch failed: ${err.message}`);
-      // Fallback — if we've never fetched, use a safe estimate
-      if (this.solPriceUsd === 0) this.solPriceUsd = 150;
-    }
-  }
-
-  // Convert USD to SOL lamports
-  usdToLamports(usd) {
-    if (this.solPriceUsd === 0) return 0;
-    const sol = usd / this.solPriceUsd;
-    return Math.floor(sol * LAMPORTS_PER_SOL);
-  }
-
-  // Convert USD to SOL (human readable)
-  usdToSol(usd) {
-    if (this.solPriceUsd === 0) return 0;
-    return usd / this.solPriceUsd;
-  }
-
-  // ----------------------------------------------------------
-  // Record a buy-in (called when player enters a game)
-  // ----------------------------------------------------------
-  // This doesn't move funds yet — it just logs the play and
-  // accumulates fees. The actual SOL splitting happens hourly.
-  //
-  // The $1.00 house portion stays in the house wallet already
-  // (since buy-ins go directly to the house wallet via Privy).
-  // We only need to SPLIT OUT the creator + bounty portions.
+  // Record a buy-in and split fees
   // ----------------------------------------------------------
   recordBuyIn(playerId) {
-    const now = Date.now();
+    const totalSol = this.fees.totalBuyInSol;
 
-    // Log the play
-    this.playLog.push({ timestamp: now, playerId });
+    // Split into three buckets
+    const creatorShare = totalSol * this.fees.creatorFraction;
+    const bountyShare = totalSol * this.fees.bountyFraction;
+    // House keeps the rest (stays in house wallet automatically)
 
-    // Accumulate fees to split out later
-    this.pendingCreatorFees += this.fees.toCreator;
-    this.pendingBountyFees += this.fees.toBountyPool;
+    this.pendingCreatorFees += creatorShare;
+    this.pendingBountyFees += bountyShare;
 
-    // Initialize bounty kill tracking for this player
-    if (!this.bountyKills.has(playerId)) {
-      this.bountyKills.set(playerId, 0);
-    }
+    // Track play for bounty prize calculation
+    this.playLog.push({ timestamp: Date.now(), playerId });
 
-    console.log(`🎮 Buy-in recorded: ${playerId}`);
-    console.log(`   Pending fees — Creator: ${this.pendingCreatorFees.toFixed(2)} | Bounty: ${this.pendingBountyFees.toFixed(2)}`);
+    console.log(`💵 Buy-in recorded: ${totalSol} SOL | Creator: +${creatorShare.toFixed(6)} | Bounty: +${bountyShare.toFixed(6)}`);
   }
 
   // ----------------------------------------------------------
-  // Record a kill (for hourly bounty tracking)
+  // Track kills for hourly bounty prize
   // ----------------------------------------------------------
-  recordBountyKill(playerId) {
+  recordKill(playerId) {
     const current = this.bountyKills.get(playerId) || 0;
     this.bountyKills.set(playerId, current + 1);
   }
 
   // ----------------------------------------------------------
-  // Get plays in the last 24 hours
+  // Get plays in last 24 hours
   // ----------------------------------------------------------
   getPlaysLast24Hours() {
     const cutoff = Date.now() - (24 * 60 * 60 * 1000);
@@ -185,194 +114,130 @@ class FeeManager {
   }
 
   // ----------------------------------------------------------
-  // Calculate current hourly bounty prize
-  // Formula: (0.05 × totalPlaysLast24hrs) / 24
+  // Calculate hourly bounty prize
   // ----------------------------------------------------------
   calculateHourlyBountyPrize() {
     const plays24h = this.getPlaysLast24Hours();
-    const prizeLamports = Math.floor(
-      (this.bountyPrizeConfig.perPlayLamports * plays24h) / this.bountyPrizeConfig.divideBy
-    );
-    return prizeLamports; // in lamports
+    const totalContribution = plays24h * this.bountyPrizeConfig.perPlaySol;
+    const hourlyPrize = totalContribution / this.bountyPrizeConfig.divideBy;
+    return Math.max(hourlyPrize, this.bountyPrizeConfig.minPrizeSol);
   }
 
   // ----------------------------------------------------------
-  // Get the current hour's bounty kill leader
+  // Get current bounty kill leader
   // ----------------------------------------------------------
   getBountyLeader() {
     let leader = null;
     let maxKills = 0;
-
     for (const [playerId, kills] of this.bountyKills) {
       if (kills > maxKills) {
         maxKills = kills;
-        leader = playerId;
+        leader = { playerId, kills };
       }
     }
-
-    return leader ? { playerId: leader, kills: maxKills } : null;
+    return leader;
   }
 
-  // ==========================================================
-  //  SCHEDULED TASKS
-  // ==========================================================
-
   // ----------------------------------------------------------
-  // HOURLY: Split fees + pay bounty prize
+  // HOURLY: Split creator fees + pay bounty prize
   // ----------------------------------------------------------
   async runHourlyTasks() {
-    console.log('\n⏰ === HOURLY FEE SPLIT & BOUNTY ===');
-
-    // Refresh SOL price
-    await this.updateSolPrice();
-
-    // 1. SPLIT CREATOR FEES — Send accumulated $0.05s to creator wallet
+    console.log('\n⏰ Running hourly fee tasks...');
     await this.splitCreatorFees();
-
-    // 2. PAY BOUNTY PRIZE — Award most kills this hour
     await this.payBountyPrize();
-
-    // 3. Reset hourly bounty kills
+    // Reset hourly kill tracker
     this.bountyKills.clear();
-
-    console.log('=== HOURLY TASKS COMPLETE ===\n');
   }
 
   // ----------------------------------------------------------
-  // Send accumulated creator fees to creator wallet
+  // Send accumulated creator fees → creator wallet
   // ----------------------------------------------------------
   async splitCreatorFees() {
     if (this.pendingCreatorFees <= 0) {
-      console.log('ℹ️  No creator fees to split');
+      console.log('   No pending creator fees');
       return;
     }
 
-    const amountUsd = this.pendingCreatorFees;
-    const amountLamports = this.usdToLamports(amountUsd);
+    const lamports = Math.floor(this.pendingCreatorFees * LAMPORTS_PER_SOL);
+    if (lamports <= 0) return;
 
-    if (amountLamports <= 0) {
-      console.log('⚠️  Amount too small to transfer');
-      return;
-    }
+    console.log(`   Splitting ${this.pendingCreatorFees.toFixed(6)} SOL → creator wallet`);
 
-    try {
-      // Get house wallet details from Privy
-      const houseWallet = await this.privy.privy.walletApi.getWallet(this.houseWalletId);
-      const housePubkey = new PublicKey(houseWallet.address);
-      const creatorPubkey = new PublicKey(this.creatorWalletAddress);
+    // ── Use privyService.sendSol() (handles safety checks internally) ──
+    const result = await this.privy.sendSol(
+      this.creatorWalletAddress,
+      lamports,
+      'Creator fee split'
+    );
 
-      // Build SOL transfer from house → creator
-      const tx = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: housePubkey,
-          toPubkey: creatorPubkey,
-          lamports: amountLamports
-        })
-      );
-
-      const { blockhash } = await this.connection.getLatestBlockhash();
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = housePubkey;
-
-      // Sign via Privy Server Wallet
-      const serializedTx = tx.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false
-      });
-
-      const signedTx = await this.privy.privy.walletApi.solana.signTransaction({
-        walletId: this.houseWalletId,
-        transaction: serializedTx.toString('base64')
-      });
-
-      const signature = await this.connection.sendRawTransaction(
-        Buffer.from(signedTx.signedTransaction, 'base64')
-      );
-
-      console.log(`💸 Creator fee split: ${amountUsd.toFixed(2)} (${(amountLamports / LAMPORTS_PER_SOL).toFixed(6)} SOL)`);
-      console.log(`   TX: ${signature}`);
-
-      // Reset pending
+    if (result.success) {
+      console.log(`   ✅ Creator fees sent: ${result.signature}`);
       this.pendingCreatorFees = 0;
-
-    } catch (err) {
-      console.error(`❌ Creator fee split failed: ${err.message}`);
-      // Fees stay pending, will retry next hour
+    } else {
+      console.error(`   ❌ Creator fee split failed: ${result.error}`);
+      // Fees stay pending, retry next hour
     }
   }
 
   // ----------------------------------------------------------
-  // Pay hourly bounty prize to top killer
+  // Pay hourly bounty prize to kill leader
   // ----------------------------------------------------------
   async payBountyPrize() {
     const leader = this.getBountyLeader();
-
     if (!leader || leader.kills === 0) {
-      console.log('ℹ️  No bounty kills this hour, prize rolls over');
-      // Bounty pool stays accumulated — rolls into next hour
+      console.log('   No bounty kills this hour');
       return;
     }
 
-    const prizeUsd = this.calculateHourlyBountyPrize();
+    const prizeSol = this.calculateHourlyBountyPrize();
+    const prizeLamports = Math.floor(prizeSol * LAMPORTS_PER_SOL);
 
-    if (prizeUsd < 0.01) {
-      console.log(`ℹ️  Bounty prize too small (${prizeUsd.toFixed(4)}), rolling over`);
+    if (prizeLamports <= 0) return;
+
+    // Get leader's wallet address
+    const walletAddress = await this.privy.getUserWalletAddress(leader.playerId);
+    if (!walletAddress) {
+      console.log(`   ⚠️ Bounty leader ${leader.playerId} has no wallet`);
       return;
     }
 
-    const prizeLamports = this.usdToLamports(prizeUsd);
+    console.log(`   Paying bounty prize: ${prizeSol.toFixed(6)} SOL → ${leader.playerId} (${leader.kills} kills)`);
 
-    try {
-      // Get winner's wallet address
-      const walletAddress = await this.privy.getUserWalletAddress(leader.playerId);
-      if (!walletAddress) {
-        console.log(`⚠️  Bounty winner ${leader.playerId} has no wallet, prize rolls over`);
-        return;
-      }
+    // ── Use privyService.sendSol() ──
+    const result = await this.privy.sendSol(
+      walletAddress,
+      prizeLamports,
+      `Hourly bounty prize (${leader.kills} kills)`
+    );
 
-      // Send SOL from house wallet → winner
-      const houseWallet = await this.privy.privy.walletApi.getWallet(this.houseWalletId);
-      const housePubkey = new PublicKey(houseWallet.address);
-      const winnerPubkey = new PublicKey(walletAddress);
-
-      const tx = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: housePubkey,
-          toPubkey: winnerPubkey,
-          lamports: prizeLamports
-        })
-      );
-
-      const { blockhash } = await this.connection.getLatestBlockhash();
-      tx.recentBlockhash = blockhash;
-      tx.feePayer = housePubkey;
-
-      const serializedTx = tx.serialize({
-        requireAllSignatures: false,
-        verifySignatures: false
-      });
-
-      const signedTx = await this.privy.privy.walletApi.solana.signTransaction({
-        walletId: this.houseWalletId,
-        transaction: serializedTx.toString('base64')
-      });
-
-      const signature = await this.connection.sendRawTransaction(
-        Buffer.from(signedTx.signedTransaction, 'base64')
-      );
-
-      console.log(`🏆 BOUNTY PRIZE PAID!`);
-      console.log(`   Winner: ${leader.playerId} (${leader.kills} kills)`);
-      console.log(`   Prize: ${prizeUsd.toFixed(2)} (${(prizeLamports / LAMPORTS_PER_SOL).toFixed(6)} SOL)`);
-      console.log(`   TX: ${signature}`);
-
-      // Reset bounty pool (prize was paid)
+    if (result.success) {
+      console.log(`   🏆 Bounty prize paid! TX: ${result.signature}`);
       this.pendingBountyFees = 0;
-
-    } catch (err) {
-      console.error(`❌ Bounty payout failed: ${err.message}`);
+    } else {
+      console.error(`   ❌ Bounty payout failed: ${result.error}`);
       // Prize stays in pool, rolls to next hour
     }
+  }
+
+  // ----------------------------------------------------------
+  // SOL price for display only
+  // ----------------------------------------------------------
+  async updateSolPrice() {
+    try {
+      const fetch = (await import('node-fetch')).default;
+      const res = await fetch(
+        'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'
+      );
+      const data = await res.json();
+      this.solPriceUsd = data.solana.usd;
+      this.lastPriceUpdate = Date.now();
+    } catch {
+      if (this.solPriceUsd === 0) this.solPriceUsd = 150;
+    }
+  }
+
+  lamportsToApproxUsd(lamports) {
+    return (lamports / LAMPORTS_PER_SOL) * this.solPriceUsd;
   }
 
   // ----------------------------------------------------------
@@ -396,9 +261,9 @@ class FeeManager {
 
     return {
       totalPlays24h: plays24h,
-      pendingCreatorFees: `${this.pendingCreatorFees.toFixed(2)}`,
-      pendingBountyPool: `${this.pendingBountyFees.toFixed(2)}`,
-      currentHourlyPrize: `${hourlyPrize.toFixed(2)}`,
+      pendingCreatorFees: `${this.pendingCreatorFees.toFixed(6)} SOL`,
+      pendingBountyPool: `${this.pendingBountyFees.toFixed(6)} SOL`,
+      currentHourlyPrize: `${hourlyPrize.toFixed(6)} SOL`,
       bountyLeader: leader ? `${leader.playerId} (${leader.kills} kills)` : 'None',
       solPriceUsd: this.solPriceUsd,
       priceAge: `${Math.floor((Date.now() - this.lastPriceUpdate) / 60000)} min ago`
@@ -409,10 +274,9 @@ class FeeManager {
   destroy() {
     clearInterval(this.hourlyInterval);
     clearInterval(this.dailyInterval);
-    // Run final fee split
+    clearInterval(this.priceInterval);
     this.splitCreatorFees();
   }
 }
 
 module.exports = FeeManager;
-
