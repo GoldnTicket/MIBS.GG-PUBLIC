@@ -9,7 +9,7 @@
   },
   
   "movement": {
-    "normalSpeed": 160,
+    "normalSpeed": 180,
     "boostMultiplier": 2.0,
     "turnRateMaxDegPerSec": 340,
     "turnStiffnessPerScale": 0.15,
@@ -26,7 +26,7 @@
 },
   
   "bot": {
-    "count": 20,
+    "count": 10,
     "startLength": 80,
     "startBounty": 2,
     "startBountyMax": 8
@@ -52,18 +52,18 @@
     "targetWidth": 40,
     "mass": 1.0,
     "friction": 0.975,
-    "initialRollSpeedMin": 150,
-    "initialRollSpeedMax": 250,
+    "initialRollSpeedMin": 5,
+    "initialRollSpeedMax": 10,
     "bounceMultiplier": 1.0,
     "peeweeBounceMultiplier": 1.0,
-    "gravity": 3.0,
+    "gravity": 1.0,
     "shadowEnabled": true,
     "shadowOffsetY": 14,
-    "shadowAlpha": 0.9,
-    "shadowWidthMultiplier": 0.85,
+    "shadowAlpha": 0.995,
+    "shadowWidthMultiplier": 0.995,
     "spinSpeedMin": 0.01,
-    "spinSpeedMax": 2.5,
-    "spinSpeedRollMultiplier": 0.10,
+    "spinSpeedMax": 0.5,
+    "spinSpeedRollMultiplier": 2.0,
     "spinVelocityThreshold": 15
   },
   
@@ -104,20 +104,20 @@
   },
   
   "zoom": {
-    "max": 1.3,
-    "min": 0.60,
+    "max": 1.0,
+ "min": 0.60,
     "scoreAtMin": 2000,
-    "lerpPer60": 0.55,
-    "progressExponent": 5.5
+    "lerpPer60": 0.12,
+    "progressExponent": 1.8
   },
   
   "face": {
     "spritesEnabled": true,
     "sizeScale": 1.0,
     "scaleMultiplier": 1.0,
-    "offsetBasePx": 25,
+    "offsetBasePx": 20,
     "offsetScaleMultiplier": 1.2,
-    "transitionDuration": 150
+    "transitionDuration": 200
   },
   
   "spline": {
