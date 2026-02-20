@@ -43,12 +43,14 @@ const StateBackup = require('./stateBackup');
 const auditLog = new AuditLog(null, gameConstants);
 const stateBackup = new StateBackup(payouts, feeManager, spendVerifier, null, gameConstants);
 
-// Restore any saved state from last server run
 stateBackup.restore().then(() => {
-  console.log('âœ… State restoration complete');
-}).catch(err => {
-  console.log('â„¹ï¸  No state to restore:', err.message);
-});
+    // ═══ FIX: Restore vault state as proper types (JSON kills Sets) ═══
+    gameState.exhaustedTiers = new Set(gameState.exhaustedTiers || []);
+    gameState.goldenVaultFloor = gameState.goldenVaultFloor || 0;
+    console.log('✅ State restoration complete');
+  }).catch(err => {
+    console.log('ℹ️ No state to restore:', err.message);
+  });
 
 const killedThisFrame = new Set(); // âœ… FIX: Track kills to prevent double-kill crash
 // ============================================================================
@@ -103,6 +105,8 @@ const gameState = {
   players: {},
   bots: [],
   coins: [],
+  exhaustedTiers: new Set(),
+  goldenVaultFloor: 0,
   lastUpdate: Date.now(),
   spatialGrid: null
 };
@@ -125,6 +129,9 @@ function updatePeeweePhysics(dt) {
     .filter(m => m.alive);
   
 for (const peewee of gameState.coins) {
+    // ✅ Skip ALL physics for coins being sucked in — suction is uninterruptible
+    if (peewee._inSuction) continue;
+    
     // Random curve drift (each peewee curves slightly different)
     if (!peewee._curve) {
       peewee._curve = (Math.random() - 0.5) * 0.02;
@@ -161,8 +168,8 @@ for (const peewee of gameState.coins) {
       peewee._spinSpeed = (Math.random() * (spinSpeedMax - spinSpeedMin) + spinSpeedMin) * (Math.random() > 0.5 ? 1 : -1);
     }
     
-    if (speed > spinVelocityThreshold) {
-      const spinMultiplier = Math.min(speed / 100, 2.0);
+if (speed > spinVelocityThreshold) {
+      const spinMultiplier = Math.min(speed / 100, 6.0);
       peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
     }
     
@@ -260,8 +267,9 @@ for (const peewee of gameState.coins) {
         const numSegments = Math.floor(bodyLength / segmentSpacing);
         
         // âœ… Only check first 10 segments for performance
-        for (let segIdx = 1; segIdx <= Math.min(numSegments, 10); segIdx++) {
-          const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
+// ✅ Check every 2nd segment across full body length
+        for (let segIdx = 1; segIdx <= numSegments; segIdx += 2) {
+           const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
           
           const segDx = peewee.x - sample.x;
           const segDy = peewee.y - sample.y;
@@ -356,6 +364,79 @@ function checkRateLimit(socketId, action) {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+// ============================================================================
+// GOLDEN VAULT HELPERS
+// ============================================================================
+
+function getVaultFloorForTier(tierThreshold) {
+  const floors = gameConstants.goldenVault?.vaultFloors || [];
+  let bestFloor = 0;
+  for (let i = 0; i < floors.length; i++) {
+    if (floors[i].tierThreshold <= tierThreshold) {
+      bestFloor = floors[i].vaultFloor;
+    }
+  }
+  return bestFloor;
+}
+
+function findGoldenMib() {
+  const allAlive = [
+    ...Object.values(gameState.players).filter(p => p.alive),
+    ...gameState.bots.filter(b => b.alive)
+  ];
+  return allAlive.find(m => m.isGolden) || null;
+}
+
+function findSecondHighestBounty(excludeId) {
+  const allAlive = [
+    ...Object.values(gameState.players).filter(p => p.alive && p.id !== excludeId),
+    ...gameState.bots.filter(b => b.alive && b.id !== excludeId)
+  ];
+  if (allAlive.length === 0) return null;
+  return allAlive.reduce((prev, cur) => (cur.bounty || 0) > (prev.bounty || 0) ? cur : prev);
+}
+
+
+
+
+function marble_alive_false_only(marble) {
+  if (!marble) return;
+  marble.alive = false;
+  // Drop peewees for length (no $ value, just gameplay)
+  const dropInfo = calculateBountyDrop(marble, gameConstants);
+  const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants, marble.lengthScore);
+  const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
+  
+  for (let i = 0; i < coinsToSpawn; i++) {
+    let spawnX = marble.x;
+    let spawnY = marble.y;
+    if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+      const bodyLength = marble.lengthScore * 2;
+      const distanceAlong = (i / coinsToSpawn) * bodyLength;
+      const sample = marble.pathBuffer.sampleBack(distanceAlong);
+      if (sample) { spawnX = sample.x; spawnY = sample.y; }
+    }
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 20 + Math.random() * 40;
+    const explodeSpeed = 100 + Math.random() * 80;
+    
+    gameState.coins.push({
+      id: `coin_${Date.now()}_${Math.random()}_${i}`,
+      x: spawnX + Math.cos(angle) * distance,
+      y: spawnY + Math.sin(angle) * distance,
+      vx: Math.cos(angle) * explodeSpeed,
+      vy: Math.sin(angle) * explodeSpeed,
+      growthValue: Math.floor(dropDist.valuePerDrop) || 5,
+      radius: gameConstants.peewee?.radius || 50,
+      mass: gameConstants.peewee?.mass || 2.0,
+      friction: gameConstants.peewee?.friction || 0.92,
+      marbleType: marble.marbleType || 'GALAXY1',
+      rotation: 0,
+      spawnTime: Date.now()
+    });
+  }
+}
+
 
 function calculateBountyDrop(marble, C) {
   const totalValue = marble.lengthScore * (C.collision?.dropValueMultiplier || 0.5);
@@ -964,7 +1045,7 @@ function checkCoinCollisions() {
         
         // âœ… Accelerating pull - gets STRONGER near head
         const distanceRatio = dist / suctionRadius; // 1.0 at edge, 0.0 at head
-        const pullStrength = Math.pow(1 - distanceRatio, 2) * 0.4; // Quadratic acceleration
+      const pullStrength = Math.pow(1 - distanceRatio, 2) * 0.55; // Quadratic acceleration (25% faster)
         
         // Calculate direction to marble
         const dx = marble.x - coin.x;
@@ -1250,18 +1331,95 @@ function checkCashoutTiers(player) {
   
   const tiers = gameConstants.cashout.tiers;
   const cashoutsThisCheck = [];
+  const jackpotThreshold = gameConstants.goldenVault?.jackpotThreshold || 1000000;
   
-  // âœ… SAWTOOTH: Keep checking while bounty crosses current tier
   while (player.nextTierIndex < tiers.length) {
     const tier = tiers[player.nextTierIndex];
     
     if (player.bounty >= tier.threshold) {
+      
+      // ═══ TIER EXHAUSTION CHECK ═══
+      if (gameState.exhaustedTiers.has(tier.threshold)) {
+        console.log(`⏭️ TIER EXHAUSTED: $${tier.threshold} (skipping for ${player.name})`);
+        player.nextTierIndex++;
+        continue;
+      }
+      
+      // ═══ JACKPOT CHECK: $1M+ threshold ═══
+      if (tier.threshold >= jackpotThreshold) {
+        const jackpotAmount = player.bounty;
+        player.totalPayout = (player.totalPayout || 0) + jackpotAmount;
+        player.bounty = 0;
+        player.alive = false;
+        
+        cashoutsThisCheck.push({
+          tierIndex: player.nextTierIndex,
+          amount: jackpotAmount,
+          total: player.totalPayout,
+          isJackpot: true
+        });
+        
+        gameState.exhaustedTiers.add(tier.threshold);
+        
+        console.log(`🎰 ═══════════════════════════════════════`);
+        console.log(`🎰 JACKPOT!!! ${player.name}`);
+        console.log(`🎰 Paid: $${jackpotAmount.toFixed(2)} | Total: $${player.totalPayout.toFixed(2)}`);
+        console.log(`🎰 ═══════════════════════════════════════`);
+        
+        // Economy reset
+        gameState.exhaustedTiers.clear();
+        gameState.goldenVaultFloor = 0;
+        console.log(`🔄 ECONOMY RESET: All tiers refreshed, vault floor cleared`);
+        
+        // Emit jackpot to winner
+        io.to(player.id).emit('jackpot', {
+          amount: jackpotAmount,
+          total: player.totalPayout
+        });
+        
+        // Announce to entire lobby
+        io.emit('jackpotAnnouncement', {
+          playerName: player.name,
+          amount: jackpotAmount
+        });
+        
+        stateBackup.saveNow();
+        
+        // $TTAW rewards for jackpot
+        if (player.privyId && player._isPaidSession) {
+          payouts.accrueCashoutTier(player.privyId, tier.threshold, jackpotAmount);
+        }
+        
+        // Remove player from game after brief delay (let events emit first)
+        const jackpotPlayerId = player.id;
+        setTimeout(() => {
+          delete gameState.players[jackpotPlayerId];
+          io.emit('playerLeft', { playerId: jackpotPlayerId });
+          updateGoldenMarble();
+        }, 500);
+        
+        break;
+      }
+      
+      // ═══ NORMAL TIER PAYOUT ═══
       const payout = tier.payout;
       
       if (payout > 0) {
         const bountyBefore = player.bounty;
-        player.totalPayout += payout;
-        player.bounty -= payout;  // âœ… SAWTOOTH: Reduce bounty by payout amount
+        player.totalPayout = (player.totalPayout || 0) + payout;
+        player.bounty -= payout;
+        
+        // Mark tier as exhausted for the match
+        gameState.exhaustedTiers.add(tier.threshold);
+        
+        // Update vault floor if this player is Golden
+        if (player.isGolden) {
+          const newVaultFloor = getVaultFloorForTier(tier.threshold);
+          if (newVaultFloor > gameState.goldenVaultFloor) {
+            console.log(`🏦 VAULT FLOOR UP: $${gameState.goldenVaultFloor} → $${newVaultFloor} (triggered $${tier.threshold} tier)`);
+            gameState.goldenVaultFloor = newVaultFloor;
+          }
+        }
         
         cashoutsThisCheck.push({
           tierIndex: player.nextTierIndex,
@@ -1269,25 +1427,22 @@ function checkCashoutTiers(player) {
           total: player.totalPayout
         });
         
-        console.log(`ðŸ’° SAWTOOTH CASHOUT! | ${player.name} | Tier ${player.nextTierIndex}: $${payout} | Bounty: $${bountyBefore.toFixed(2)} â†’ $${player.bounty.toFixed(2)} | Total paid: $${player.totalPayout}`);
-      // â”€â”€ Immediate backup: money just changed â”€â”€
+        console.log(`💰 CASHOUT: ${player.name} | Tier $${tier.threshold}: payout $${payout} | Bounty: $${bountyBefore.toFixed(2)} → $${player.bounty.toFixed(2)} | Total paid: $${player.totalPayout.toFixed(2)}`);
         stateBackup.saveNow();
-// â”€â”€ $TTAW: Accrue payout for this tier â”€â”€
+        
+        // $TTAW rewards
         if (player.privyId && player._isPaidSession) {
           payouts.accrueCashoutTier(player.privyId, tier.threshold, payout);
         }
-        // â”€â”€ $TTAW: Award tier bonus tokens â”€â”€
         if (player.privyId) {
           const tierBonus = payout * (gameConstants.economy?.rewards?.cashoutBonusRate || 0.10);
           rewards.queueReward(player.privyId, tierBonus, `cashout_tier_${player.nextTierIndex}`);
         }
-
-
       }
       
       player.nextTierIndex++;
     } else {
-      break;  // Haven't reached next tier yet
+      break;
     }
   }
   
@@ -1354,67 +1509,165 @@ for (let i = 0; i < coinsToSpawn; i++) {
   
   if (killerId) {
     killer = gameState.players[killerId];
-    const socket_killer_privyId = killer?.privyId || null;
-    if (!killer) killer = gameState.bots.find(b => b.id === killerId);
+     if (!killer) killer = gameState.bots.find(b => b.id === killerId);
     
     if (killer) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
+  
       
-if (killer.alive) {
-        const bountyGained = dropInfo.bountyValue;
+ if (killer.alive) {
+        const victimBounty = dropInfo.bountyValue;
+        const vaultConfig = gameConstants.goldenVault;
         killer.kills = (killer.kills || 0) + 1;
+        const socket_killer_privyId = killer?.privyId || null;
         
-        // âœ… GOLDEN 20% ABSORPTION TAX: Take off the top BEFORE adding to bounty
-        let actualBountyAdded = bountyGained;
-        let goldenPayout = 0;
-        
-        if (killer.isGolden && bountyGained > 0) {
-          goldenPayout = bountyGained * 0.20;
-          actualBountyAdded = bountyGained - goldenPayout;  // Only 80% goes to bounty
-          console.log(`ðŸ¥‡ GOLDEN TAX: ${killer.name} | Absorbed $${bountyGained} | 20% tax: $${goldenPayout.toFixed(2)} paid | 80%: $${actualBountyAdded.toFixed(2)} added to bounty`);
-        }
-        
-        killer.bounty = (killer.bounty || 0) + actualBountyAdded;
-        
-        if (!killer.isBot) {
-          // âœ… Golden instant payout (BEFORE tier check, since bounty is already reduced)
-          if (goldenPayout > 0) {
+        let bountyGainedForNotification = 0;
+
+        // ═══════════════════════════════════════════════════════
+        // CASE 1: VICTIM IS GOLDEN MIB → Vault Transfer Sequence
+        // ═══════════════════════════════════════════════════════
+        if (marble.isGolden && victimBounty > 0) {
+          const vaultFloor = gameState.goldenVaultFloor || 0;
+          const transferable = Math.max(0, victimBounty - vaultFloor);
+          
+          console.log(`🏦 VAULT TRANSFER: ${marble.name} killed by ${killer.name}`);
+          console.log(`   Bounty: $${victimBounty.toFixed(2)} | Vault: $${vaultFloor} | Transferable: $${transferable.toFixed(2)}`);
+          
+          // Step 2: Transfer only "up for grabs" portion
+          killer.bounty = (killer.bounty || 0) + transferable;
+          
+          // Step 3: Killer progresses through tiers on the transferable amount
+          if (!killer.isBot) {
+            const cashouts = checkCashoutTiers(killer);
+            if (cashouts && cashouts.length > 0) {
+              console.log(`💰 VAULT KILL TIERS: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty after: $${killer.bounty.toFixed(2)}`);
+              io.to(killer.id).emit('cashout', {
+                tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                total: killer.totalPayout,
+                bountyGained: transferable
+              });
+              // If jackpot was hit, killer is removed — skip vault inheritance
+              if (cashouts.some(c => c.isJackpot)) {
+                console.log(`🎰 JACKPOT during vault transfer! ${killer.name} removed.`);
+                bountyGainedForNotification = transferable;
+                // Skip Step 4-6, player is gone
+              }
+            }
+            
+            // Step 4: Add vault floor on top (only if not jackpotted out)
+            if (killer.alive) {
+              killer.bounty += vaultFloor;
+              console.log(`🏦 VAULT INHERITED: ${killer.name} | New bounty: $${killer.bounty.toFixed(2)} | Vault floor: $${vaultFloor}`);
+            }
+          } else {
+            // Bot killer — just add vault floor directly
+            killer.bounty += vaultFloor;
+          }
+          
+          bountyGainedForNotification = transferable;
+
+        // ═══════════════════════════════════════════════════════
+        // CASE 2: KILLER IS GOLDEN MIB → 20% wallet, 80% bounty
+        // ═══════════════════════════════════════════════════════
+        } else if (killer.isGolden && victimBounty > 0) {
+          const goldenPayout = victimBounty * (vaultConfig?.instantCashRate || 0.20);
+          const bountyAdded = victimBounty - goldenPayout;
+          
+          killer.bounty = (killer.bounty || 0) + bountyAdded;
+          
+          console.log(`🥇 GOLDEN KILL: ${killer.name} | Absorbed $${victimBounty.toFixed(2)} | 20%: $${goldenPayout.toFixed(2)} to wallet | 80%: $${bountyAdded.toFixed(2)} to bounty`);
+          
+          if (!killer.isBot) {
+            // Golden instant payout to wallet
             killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
-            // â”€â”€ Immediate backup: golden payout accrued â”€â”€
             stateBackup.saveNow();
             io.to(killer.id).emit('cashout', {
               tiers: [{ amount: goldenPayout, isGolden: true }],
               total: killer.totalPayout,
               isGolden: true,
-              bountyGained: bountyGained
+              bountyGained: victimBounty
             });
+            
+            // Check tier cashouts on the bounty portion
+            const cashouts = checkCashoutTiers(killer);
+            if (cashouts && cashouts.length > 0) {
+              console.log(`💰 GOLDEN TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty: $${killer.bounty.toFixed(2)}`);
+              io.to(killer.id).emit('cashout', {
+                tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                total: killer.totalPayout,
+                bountyGained: bountyAdded
+              });
+            }
           }
           
-          // âœ… SAWTOOTH: Check tier cashouts (bounty may cross tier, then get reduced)
-          const cashouts = checkCashoutTiers(killer);
-          
-          if (cashouts && cashouts.length > 0) {
-            console.log(`ðŸ’° SAWTOOTH TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty after: $${killer.bounty.toFixed(2)} | totalPayout=$${killer.totalPayout}`);
-            io.to(killer.id).emit('cashout', {
-              tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false })),
-              total: killer.totalPayout,
-              bountyGained: actualBountyAdded
-            });
-          }
-          
-          // Send kill notification
+          bountyGainedForNotification = bountyAdded;
 
-// â”€â”€ $TTAW: Award kill tokens â”€â”€
+        // ═══════════════════════════════════════════════════════
+        // CASE 3: REGULAR PVP → 10% tax to Golden Mib
+        // ═══════════════════════════════════════════════════════
+        } else {
+          const taxRate = vaultConfig?.passiveTaxRate || 0.10;
+          const taxExemptMax = vaultConfig?.taxExemptMaxBounty || 1;
+          
+          const goldenMib = findGoldenMib();
+          
+          // Tax exempt: both at $1 or less, OR no Golden Mib exists
+          const isExempt = !goldenMib || (victimBounty <= taxExemptMax && (killer.bounty || 0) <= taxExemptMax);
+          
+          let bountyToKiller = victimBounty;
+          let taxToGolden = 0;
+          
+          if (!isExempt) {
+            taxToGolden = victimBounty * taxRate;
+            bountyToKiller = victimBounty - taxToGolden;
+            goldenMib.bounty = (goldenMib.bounty || 0) + taxToGolden;
+            
+            console.log(`👑 GOLDEN TAX: ${goldenMib.name} +$${taxToGolden.toFixed(2)} (10% of $${victimBounty.toFixed(2)}) | Golden bounty now: $${goldenMib.bounty.toFixed(2)}`);
+            
+            // Check if Golden Mib's passive income triggers tiers
+            if (!goldenMib.isBot) {
+              const goldenCashouts = checkCashoutTiers(goldenMib);
+              if (goldenCashouts && goldenCashouts.length > 0) {
+                io.to(goldenMib.id).emit('cashout', {
+                  tiers: goldenCashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                  total: goldenMib.totalPayout,
+                  bountyGained: taxToGolden
+                });
+              }
+            }
+          }
+          
+          killer.bounty = (killer.bounty || 0) + bountyToKiller;
+          
+          if (!killer.isBot) {
+            const cashouts = checkCashoutTiers(killer);
+            if (cashouts && cashouts.length > 0) {
+              console.log(`💰 REGULAR KILL TIERS: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty: $${killer.bounty.toFixed(2)}`);
+              io.to(killer.id).emit('cashout', {
+                tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                total: killer.totalPayout,
+                bountyGained: bountyToKiller
+              });
+            }
+          }
+          
+          bountyGainedForNotification = bountyToKiller;
+        }
+        
+        // ═══════════════════════════════════════════════════════
+        // KILL NOTIFICATION + $TTAW (all cases)
+        // ═══════════════════════════════════════════════════════
+        if (!killer.isBot && killer.alive) {
           if (socket_killer_privyId) {
             rewards.handleKill(socket_killer_privyId);
           }
-
+          
           io.to(killer.id).emit('playerKill', {
             killerId: killer.id,
             victimId: marble.id,
             victimName: marble.name || 'Player',
-            bountyGained: actualBountyAdded
+            bountyGained: bountyGainedForNotification
           });
         }
       }
@@ -1505,13 +1758,31 @@ io.emit('marbleDeath', {
 io.on('connection', (socket) => {
   console.log(`ðŸ”Œ Player connected: ${socket.id.substring(0, 8)}`);
   
-  socket.emit('init', {
+socket.emit('init', {
     playerId: socket.id,
     constants: gameConstants,
     gameState: {
-      players: gameState.players,
-      bots: gameState.bots,
-      coins: gameState.coins
+      players: Object.fromEntries(
+        Object.entries(gameState.players)
+          .filter(([id, p]) => p && p.alive)
+          .map(([id, p]) => [id, {
+            id: p.id, name: p.name, marbleType: p.marbleType,
+            x: p.x, y: p.y, angle: p.angle, targetAngle: p.targetAngle,
+            lengthScore: p.lengthScore, bounty: p.bounty, kills: p.kills,
+            alive: p.alive, isGolden: p.isGolden, boosting: p.boosting || false,
+            lastProcessedInput: p.lastProcessedInput, nextTierIndex: p.nextTierIndex || 0
+          }])
+      ),
+      bots: gameState.bots.filter(b => b && b.alive).map(b => ({
+        id: b.id, name: b.name, marbleType: b.marbleType,
+        x: b.x, y: b.y, angle: b.angle, lengthScore: b.lengthScore,
+        bounty: b.bounty, alive: b.alive, isGolden: b.isGolden, boosting: b.boosting || false
+      })),
+      coins: gameState.coins.map(c => ({
+        id: c.id, x: c.x, y: c.y, vx: c.vx, vy: c.vy,
+        radius: c.radius, growthValue: c.growthValue,
+        marbleType: c.marbleType, rotation: c.rotation || 0
+      }))
     }
   });
 
@@ -1563,6 +1834,15 @@ _lastAngle: 0,
     });
     
     console.log(`âœ… ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
+
+    // ═══ VAULT KEEPER ABSORPTION ═══
+    const vaultKeeper = gameState.bots.find(b => b.isVaultKeeper && b.alive);
+    if (vaultKeeper) {
+      console.log(`🏦 VAULT KEEPER ABSORBED by ${player.name} | Bounty: $${vaultKeeper.bounty.toFixed(2)}`);
+      // Run vault transfer sequence: treat as if this player killed the vault keeper
+      killMarble(vaultKeeper, socket.id);
+    }
+
 
 // â”€â”€ $TTAW: Start payout session if authenticated â”€â”€
     if (socket.privyUserId) {
@@ -1746,6 +2026,60 @@ socket.on('disconnect', async () => {
       }
     }
 
+// ✅ Disconnect = death: drop peewees + transfer bounty to highest player
+    if (player && player.alive) {
+  const allAlive = [
+        ...Object.values(gameState.players).filter(p => p.alive && p.id !== socket.id),
+        ...gameState.bots.filter(b => b.alive)
+      ];
+      
+      if (allAlive.length > 0) {
+        // Credit kill to second-highest bounty player (vault transfer sequence applies)
+        const sorted = allAlive.sort((a, b) => (b.bounty || 0) - (a.bounty || 0));
+        const creditTo = sorted[0].id;
+        killMarble(player, creditTo);
+      } else if (player.isGolden && (player.bounty || 0) > 0) {
+        // ═══ VAULT KEEPER: No players left, preserve golden bounty ═══
+        const vaultKeeperBot = {
+          id: `vaultkeeper_${Date.now()}`,
+          name: '🏦 Vault Keeper',
+          x: 0,
+          y: 0,
+          angle: 0,
+          targetAngle: 0,
+          lengthScore: gameConstants.player.startLength,
+          bounty: player.bounty,
+          kills: 0,
+          alive: true,
+          boosting: false,
+          isBot: true,
+          isGolden: true,
+          isVaultKeeper: true,
+          lastUpdate: Date.now(),
+          spawnTime: Date.now(),
+          pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+          _lastValidX: 0,
+          _lastValidY: 0,
+          _lastAngle: 0,
+          _aiState: 'IDLE',
+          _steerSmooth: 0,
+          _wanderCurve: 0,
+          _personality: { aggression: 0, speed: 0 }
+        };
+        vaultKeeperBot.pathBuffer.reset(0, 0);
+        gameState.bots.push(vaultKeeperBot);
+        
+        // Vault floor carries over — already set in gameState
+        console.log(`🏦 VAULT KEEPER SPAWNED: Bounty $${player.bounty.toFixed(2)} | Vault floor: $${gameState.goldenVaultFloor}`);
+        
+        // Kill the disconnected player without crediting anyone
+        marble_alive_false_only(player);
+      } else {
+        // Non-golden player, no one to credit — just die
+        marble_alive_false_only(player);
+      }
+    }
+
     // ── $TTAW: End payout session + cleanup ──
     if (socket._survivalInterval) clearInterval(socket._survivalInterval);
     const privyId = socket.privyUserId;
@@ -1764,7 +2098,9 @@ socket.on('disconnect', async () => {
 
 function initializeGame() {
   console.log('ðŸŽ® Initializing game...');
-  
+  gameState.exhaustedTiers = new Set();
+  gameState.goldenVaultFloor = 0;
+
   const bounds = {
     minX: -gameConstants.arena.radius,
     minY: -gameConstants.arena.radius,
@@ -1792,16 +2128,38 @@ function initializeGame() {
 // GOLDEN MARBLE UPDATE
 // ============================================================================
 function updateGoldenMarble() {
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  const allMarbles = [
+    ...Object.values(gameState.players),
+    ...gameState.bots
+  ].filter(m => m.alive);
   
+  // Find who WAS golden before this update
+  const previousGolden = allMarbles.find(m => m.isGolden);
+  
+  // Clear all golden status
   allMarbles.forEach(m => m.isGolden = false);
   
-  if (allMarbles.length > 0) {
-    const highest = allMarbles.reduce((prev, current) => {
-      return (current.bounty || 0) > (prev.bounty || 0) ? current : prev;
-    });
-    
-    if (highest.bounty > 0) highest.isGolden = true;
+  if (allMarbles.length === 0) return;
+  
+  // Find highest bounty
+  const highest = allMarbles.reduce((prev, cur) => {
+    return (cur.bounty || 0) > (prev.bounty || 0) ? cur : prev;
+  });
+  
+  if ((highest.bounty || 0) <= 0) return;
+  
+  highest.isGolden = true;
+  
+  // ═══ GOLDEN MIB CHANGED HANDS ═══
+  if (previousGolden && previousGolden.id !== highest.id) {
+    console.log(`👑 GOLDEN TRANSFER: ${previousGolden.name} → ${highest.name} | Vault floor: $${gameState.goldenVaultFloor}`);
+    // Vault floor carries over — it only goes up from here via tier triggers
+    // New golden mib inherits whatever the vault floor currently is
+  }
+  
+  // ═══ FIRST GOLDEN MIB (no previous) ═══
+  if (!previousGolden && highest.isGolden) {
+    console.log(`👑 FIRST GOLDEN MIB: ${highest.name} | Bounty: $${(highest.bounty || 0).toFixed(2)} | Vault floor: $${gameState.goldenVaultFloor}`);
   }
 }
 
@@ -2120,13 +2478,15 @@ const cleanCoins = gameState.coins.map(c => ({
 rotation: c.rotation || 0
   }));
   
-  io.emit('gameState', {
-serverDeltaMs: 1000 / TICK_RATE,
-    players: cleanPlayers,
-    bots: cleanBots,
-    coins: cleanCoins,
-    timestamp: now
-  });
+io.emit('gameState', {
+  serverDeltaMs: delta,
+  players: cleanPlayers,
+  bots: cleanBots,
+  coins: cleanCoins,
+  timestamp: now,
+  goldenVaultFloor: gameState.goldenVaultFloor,
+  exhaustedTierCount: gameState.exhaustedTiers.size
+});
   
 
 }, 1000 / TICK_RATE);
