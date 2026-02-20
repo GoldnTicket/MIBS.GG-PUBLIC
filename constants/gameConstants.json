@@ -59,17 +59,26 @@
     "gravity": 1.0,
     "shadowEnabled": true,
     "shadowOffsetY": 14,
-    "shadowAlpha": 0.995,
-    "shadowWidthMultiplier": 0.995,
+    "shadowAlpha": 1.0,
+    "shadowWidthMultiplier": 1.25,
     "spinSpeedMin": 0.01,
     "spinSpeedMax": 0.5,
     "spinSpeedRollMultiplier": 2.0,
     "spinVelocityThreshold": 15
   },
   
-  "collision": {
+"collision": {
     "dropValueMultiplier": 0.60,
     "gridSizePx": 64
+  },
+
+  "deathDrop": {
+    "dropsPerSegment": 1,
+    "maxDrops": 30,
+    "sizeMultiplier": 0.5,
+    "scatterDistance": 15,
+    "explosionSpeedMin": 15,
+    "explosionSpeedMax": 40
   },
   
   "suction": {
@@ -103,12 +112,12 @@
     "speedMultiplier": 1.10
   },
   
-  "zoom": {
+"zoom": {
     "max": 1.0,
- "min": 0.60,
+    "min": 0.55,
     "scoreAtMin": 2000,
-    "lerpPer60": 0.12,
-    "progressExponent": 1.8
+    "lerpPer60": 0.08,
+    "progressExponent": 0.7
   },
   
   "face": {
@@ -287,21 +296,31 @@
   ],
   
 "pickupThemes": {
-  "GALAXY1": {"key": "GALAXY1", "isShooter": true},
-  "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true},
-  "USA1": {"key": "USA1", "isShooter": true},
-  "FRANCE1": {"key": "FRANCE1", "isShooter": true},
-  "BANANASWIRL": {"key": "BANANASWIRL", "isShooter": true},
-  "BLUEMOON": {"key": "BLUEMOON", "isShooter": true},
-  "CANADA": {"key": "CANADA", "isShooter": true},
-  "CATSEYEBLUEYELLOW": {"key": "CATSEYEBLUEYELLOW", "isShooter": true},
-  "CATSEYEGREENBLUE": {"key": "CATSEYEGREENBLUE", "isShooter": true},
-  "CATSEYEGREENORANGE": {"key": "CATSEYEGREENORANGE", "isShooter": true},
-  "CHINA": {"key": "CHINA", "isShooter": true},
-  "GOLDENMIB": {"key": "GOLDENMIB", "isShooter": true},
-  "KOIFISH": {"key": "KOIFISH", "isShooter": true},
-  "STARDUSTGREEN": {"key": "STARDUSTGREEN", "isShooter": true},
-  "UNICORN": {"key": "UNICORN", "isShooter": true},
-  "HALO": {"key": "HALO", "isShooter": true}
+  "GALAXY1": {"key": "GALAXY1", "isShooter": true, "isSmallie": true},
+  "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true, "isSmallie": true},
+  "USA1": {"key": "USA1", "isShooter": true, "isSmallie": true},
+  "FRANCE1": {"key": "FRANCE1", "isShooter": true, "isSmallie": true},
+  "BANANASWIRL": {"key": "BANANASWIRL", "isShooter": true, "isSmallie": true},
+  "BLUEMOON": {"key": "BLUEMOON", "isShooter": true, "isSmallie": true},
+  "CANADA": {"key": "CANADA", "isShooter": true, "isSmallie": true},
+  "CATSEYEBLUEYELLOW": {"key": "CATSEYEBLUEYELLOW", "isShooter": true, "isSmallie": true},
+  "CATSEYEGREENBLUE": {"key": "CATSEYEGREENBLUE", "isShooter": true, "isSmallie": true},
+  "CATSEYEGREENORANGE": {"key": "CATSEYEGREENORANGE", "isShooter": true, "isSmallie": true},
+  "CHINA": {"key": "CHINA", "isShooter": true, "isSmallie": true},
+  "GOLDENMIB": {"key": "GOLDENMIB", "isShooter": true, "isSmallie": false},
+  "KOIFISH": {"key": "KOIFISH", "isShooter": true, "isSmallie": true},
+  "STARDUSTGREEN": {"key": "STARDUSTGREEN", "isShooter": true, "isSmallie": true},
+  "UNICORN": {"key": "UNICORN", "isShooter": true, "isSmallie": true},
+  "HALO": {"key": "HALO", "isShooter": true, "isSmallie": true},
+  "BLUEBOLT": {"key": "BLUEBOLT", "isShooter": true, "isSmallie": true},
+  "BRAZIL": {"key": "BRAZIL", "isShooter": true, "isSmallie": true},
+  "FIRESTORM": {"key": "FIRESTORM", "isShooter": true, "isSmallie": true},
+  "GLASSIE": {"key": "GLASSIE", "isShooter": true, "isSmallie": true},
+  "HAWAII": {"key": "HAWAII", "isShooter": true, "isSmallie": true},
+  "INDIA": {"key": "INDIA", "isShooter": true, "isSmallie": true},
+  "NEONDREAM": {"key": "NEONDREAM", "isShooter": true, "isSmallie": true},
+  "PANTHER": {"key": "PANTHER", "isShooter": true, "isSmallie": true},
+  "STARSPANGLED": {"key": "STARSPANGLED", "isShooter": true, "isSmallie": true},
+  "SUNSET": {"key": "SUNSET", "isShooter": true, "isSmallie": true}
 }
 }

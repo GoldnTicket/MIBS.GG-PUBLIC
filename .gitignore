@@ -33,3 +33,4 @@
 node_modules/
 state_backup.json
 logs/
+node_modules/
