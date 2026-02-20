@@ -22,7 +22,7 @@
   "startLength": 200,
   "startBounty": 1,
   "widthVsLengthMult": 3.0,
-  "startRadius": 20
+  "startRadius": 15
 },
   
   "bot": {
@@ -62,23 +62,25 @@
     "shadowAlpha": 1.0,
     "shadowWidthMultiplier": 1.25,
     "spinSpeedMin": 0.01,
-    "spinSpeedMax": 0.5,
-    "spinSpeedRollMultiplier": 2.0,
-    "spinVelocityThreshold": 15
+    "spinSpeedMax": 0.10,
+    "spinSpeedRollMultiplier": 15.0,
+    "spinVelocityThreshold": 2
   },
   
+
+
 "collision": {
     "dropValueMultiplier": 0.60,
     "gridSizePx": 64
   },
 
   "deathDrop": {
-    "dropsPerSegment": 1,
-    "maxDrops": 30,
-    "sizeMultiplier": 0.5,
-    "scatterDistance": 15,
+    "dropsPerSegment": 2,
+    "maxDrops": 40,
+    "sizeMultiplier": 0.6,
+    "scatterDistance": 10,
     "explosionSpeedMin": 15,
-    "explosionSpeedMax": 40
+    "explosionSpeedMax": 20
   },
   
   "suction": {
@@ -286,6 +288,50 @@
     ]
   },
   
+
+"goldenVault": {
+    "passiveTaxRate": 0.10,
+    "instantCashRate": 0.20,
+    "taxExemptMaxBounty": 1,
+    "jackpotThreshold": 1000000,
+    "vaultFloors": [
+      {"tierThreshold": 50, "vaultFloor": 20},
+      {"tierThreshold": 100, "vaultFloor": 50},
+      {"tierThreshold": 500, "vaultFloor": 300},
+      {"tierThreshold": 1000, "vaultFloor": 500},
+      {"tierThreshold": 2000, "vaultFloor": 1000},
+      {"tierThreshold": 3000, "vaultFloor": 1500},
+      {"tierThreshold": 4000, "vaultFloor": 2000},
+      {"tierThreshold": 5000, "vaultFloor": 2500},
+      {"tierThreshold": 6000, "vaultFloor": 3500},
+      {"tierThreshold": 7000, "vaultFloor": 3500},
+      {"tierThreshold": 8000, "vaultFloor": 4500},
+      {"tierThreshold": 9000, "vaultFloor": 4500},
+      {"tierThreshold": 10000, "vaultFloor": 5000},
+      {"tierThreshold": 11000, "vaultFloor": 5500},
+      {"tierThreshold": 20000, "vaultFloor": 10000},
+      {"tierThreshold": 30000, "vaultFloor": 15000},
+      {"tierThreshold": 40000, "vaultFloor": 20000},
+      {"tierThreshold": 50000, "vaultFloor": 25000},
+      {"tierThreshold": 60000, "vaultFloor": 30000},
+      {"tierThreshold": 70000, "vaultFloor": 35000},
+      {"tierThreshold": 80000, "vaultFloor": 40000},
+      {"tierThreshold": 90000, "vaultFloor": 45000},
+      {"tierThreshold": 100000, "vaultFloor": 55000},
+      {"tierThreshold": 110000, "vaultFloor": 55000},
+      {"tierThreshold": 200000, "vaultFloor": 150000},
+      {"tierThreshold": 300000, "vaultFloor": 225000},
+      {"tierThreshold": 400000, "vaultFloor": 350000},
+      {"tierThreshold": 500000, "vaultFloor": 375000},
+      {"tierThreshold": 600000, "vaultFloor": 450000},
+      {"tierThreshold": 700000, "vaultFloor": 525000},
+      {"tierThreshold": 800000, "vaultFloor": 525000},
+      {"tierThreshold": 900000, "vaultFloor": 700000},
+      {"tierThreshold": 1000000, "vaultFloor": 700000}
+    ]
+  },
+
+
   "ranks": [
     {"maxKills": 0, "label": "NOOB"},
     {"maxKills": 5, "label": "Beginner"},
