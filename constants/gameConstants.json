@@ -22,7 +22,7 @@
   "startLength": 200,
   "startBounty": 1,
   "widthVsLengthMult": 3.0,
-  "startRadius": 20
+  "startRadius": 15
 },
   
   "bot": {
@@ -62,23 +62,25 @@
     "shadowAlpha": 1.0,
     "shadowWidthMultiplier": 1.25,
     "spinSpeedMin": 0.01,
-    "spinSpeedMax": 0.5,
-    "spinSpeedRollMultiplier": 2.0,
-    "spinVelocityThreshold": 15
+    "spinSpeedMax": 0.10,
+    "spinSpeedRollMultiplier": 15.0,
+    "spinVelocityThreshold": 2
   },
   
+
+
 "collision": {
     "dropValueMultiplier": 0.60,
     "gridSizePx": 64
   },
 
   "deathDrop": {
-    "dropsPerSegment": 1,
-    "maxDrops": 30,
-    "sizeMultiplier": 0.5,
-    "scatterDistance": 15,
+    "dropsPerSegment": 2,
+    "maxDrops": 40,
+    "sizeMultiplier": 0.6,
+    "scatterDistance": 10,
     "explosionSpeedMin": 15,
-    "explosionSpeedMax": 40
+    "explosionSpeedMax": 20
   },
   
   "suction": {
@@ -159,11 +161,15 @@
   },
 
 "economy": {
+    "currency": "USDC",
+    "usdcMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "usdcDecimals": 6,
+
     "buyIn": {
-      "solAmount": 0.008,
-      "houseSplitFraction": 0.9091,
-      "creatorSplitFraction": 0.0455,
-      "bountySplitFraction": 0.0454
+      "amountUsdc": 1.10,
+      "houseSplitFraction": 0.909090,
+      "creatorSplitFraction": 0.045454,
+      "bountySplitFraction": 0.045454
     },
 
     "bountyTransfer": {
@@ -175,26 +181,31 @@
     },
 
     "hourlyBountyPrize": {
-      "perPlayContributionSol": 0.000364,
-      "dividedByHours": 24,
-      "minimumPrizeSol": 0.0001
+      "perPlayContributionUsdc": 0.05,
+      "minimumPrizeUsdc": 0.10,
+      "paidGamesOnly": true,
+      "tieBreaker": "split",
+      "rolloverIfNoKills": true
     },
 
     "ttawRewards": {
-      "welcomeAirdrop": 3,
-      "killReward": 0.5,
-      "firstKillBonus": 1.0,
-      "streakMultiplierPerKill": 0.25,
-      "survivalPerMinute": 0.05,
-      "cashoutBonusMultiplier": 0.1,
-      "minCashoutScoreForBonus": 100,
+      "welcomeAirdrop": 0,
+      "perPaidPlay": 1,
+      "firstKillBonus": 100,
+      "hundredKillsMilestone": 1000,
+      "milestoneRequiresPaid": true,
       "dailyEarnCap": 50,
-      "cooldownMs": 5000,
-      "victimSizeBonuses": [
-        { "minSize": 50, "bonus": 0.25 },
-        { "minSize": 200, "bonus": 0.5 },
-        { "minSize": 500, "bonus": 1.0 }
-      ]
+      "cooldownMs": 5000
+    },
+
+    "promoGrant": {
+      "amountUsdc": 3.30,
+      "maxGrants": 500,
+      "requiresDiscord": true,
+      "withdrawalLock": {
+        "minPaidGames": 20,
+        "orBalanceBelowUsdc": 1.10
+      }
     },
 
     "perkCosts": {
@@ -205,17 +216,27 @@
       "name_color": 2
     },
 
-"payouts": {
+    "payouts": {
       "queueProcessIntervalMs": 2000,
       "maxRetriesOnFailure": 3,
       "stateBackupIntervalMs": 30000,
-      "maxBackupAgeMs": 300000,
-      "solPriceRefreshMs": 300000
+      "maxBackupAgeMs": 300000
     },
 
     "feeSplitting": {
       "processIntervalMs": 3600000,
       "dailyCleanupRetentionHours": 48
+    },
+
+    "gasSponsorship": {
+      "enabled": true,
+      "maxSolPerTransaction": 0.001,
+      "solReserveWarningThreshold": 0.1
+    },
+
+    "passwordGate": {
+      "enabled": true,
+      "envKey": "PAID_PLAY_PASSWORD"
     },
 
     "broadcasts": {
@@ -230,9 +251,6 @@
     }
   },
 
-
-
-  
 "cashout": {
     "tiers": [
       {"threshold": 1, "payout": 0},
@@ -286,6 +304,50 @@
     ]
   },
   
+
+"goldenVault": {
+    "passiveTaxRate": 0.10,
+    "instantCashRate": 0.20,
+    "taxExemptMaxBounty": 1,
+    "jackpotThreshold": 1000000,
+    "vaultFloors": [
+      {"tierThreshold": 50, "vaultFloor": 20},
+      {"tierThreshold": 100, "vaultFloor": 50},
+      {"tierThreshold": 500, "vaultFloor": 300},
+      {"tierThreshold": 1000, "vaultFloor": 500},
+      {"tierThreshold": 2000, "vaultFloor": 1000},
+      {"tierThreshold": 3000, "vaultFloor": 1500},
+      {"tierThreshold": 4000, "vaultFloor": 2000},
+      {"tierThreshold": 5000, "vaultFloor": 2500},
+      {"tierThreshold": 6000, "vaultFloor": 3500},
+      {"tierThreshold": 7000, "vaultFloor": 3500},
+      {"tierThreshold": 8000, "vaultFloor": 4500},
+      {"tierThreshold": 9000, "vaultFloor": 4500},
+      {"tierThreshold": 10000, "vaultFloor": 5000},
+      {"tierThreshold": 11000, "vaultFloor": 5500},
+      {"tierThreshold": 20000, "vaultFloor": 10000},
+      {"tierThreshold": 30000, "vaultFloor": 15000},
+      {"tierThreshold": 40000, "vaultFloor": 20000},
+      {"tierThreshold": 50000, "vaultFloor": 25000},
+      {"tierThreshold": 60000, "vaultFloor": 30000},
+      {"tierThreshold": 70000, "vaultFloor": 35000},
+      {"tierThreshold": 80000, "vaultFloor": 40000},
+      {"tierThreshold": 90000, "vaultFloor": 45000},
+      {"tierThreshold": 100000, "vaultFloor": 55000},
+      {"tierThreshold": 110000, "vaultFloor": 55000},
+      {"tierThreshold": 200000, "vaultFloor": 150000},
+      {"tierThreshold": 300000, "vaultFloor": 225000},
+      {"tierThreshold": 400000, "vaultFloor": 350000},
+      {"tierThreshold": 500000, "vaultFloor": 375000},
+      {"tierThreshold": 600000, "vaultFloor": 450000},
+      {"tierThreshold": 700000, "vaultFloor": 525000},
+      {"tierThreshold": 800000, "vaultFloor": 525000},
+      {"tierThreshold": 900000, "vaultFloor": 700000},
+      {"tierThreshold": 1000000, "vaultFloor": 700000}
+    ]
+  },
+
+
   "ranks": [
     {"maxKills": 0, "label": "NOOB"},
     {"maxKills": 5, "label": "Beginner"},

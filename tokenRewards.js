@@ -15,17 +15,14 @@ class TokenRewardSystem {
     const cfg = this.gc.economy.ttawRewards;
 
     // REWARD CONFIGURATION — All values from gameConstants.json
-    this.config = {
-      welcomeAirdrop:     cfg.welcomeAirdrop,       // 3
-      killReward:         cfg.killReward,            // 0.5
-      cashoutMultiplier:  cfg.cashoutBonusMultiplier, // 0.1
-      survivalPerMinute:  cfg.survivalPerMinute,     // 0.05
-      firstKillBonus:     cfg.firstKillBonus,        // 1.0
-      streakMultiplier:   cfg.streakMultiplierPerKill, // 0.25
-      dailyEarnCap:       cfg.dailyEarnCap,          // 50
-      minCashoutForBonus: cfg.minCashoutScoreForBonus, // 100
-      cooldownMs:         cfg.cooldownMs,            // 5000
-      victimSizeBonuses:  cfg.victimSizeBonuses,
+this.config = {
+      welcomeAirdrop:        cfg.welcomeAirdrop,        // 0 (disabled for now)
+      perPaidPlay:           cfg.perPaidPlay,            // 1 TTAW per paid game
+      firstKillBonus:        cfg.firstKillBonus,         // 100 TTAW for first ever kill
+      hundredKillsMilestone: cfg.hundredKillsMilestone,  // 1000 TTAW at 100th kill
+      milestoneRequiresPaid: cfg.milestoneRequiresPaid,  // true (paid games only)
+      dailyEarnCap:          cfg.dailyEarnCap,           // 50
+      cooldownMs:            cfg.cooldownMs,             // 5000
     };
 
     // In-memory tracking
@@ -37,9 +34,11 @@ class TokenRewardSystem {
     // Process transfer queue every 10 seconds
     this.queueInterval = setInterval(() => this.processQueue(), 10000);
 
-    console.log('🎮 TokenRewardSystem initialized (from gameConstants)');
+ console.log('🎮 TokenRewardSystem initialized (from gameConstants)');
     console.log(`   Welcome airdrop: ${this.config.welcomeAirdrop} $TTAW`);
-    console.log(`   Kill reward: ${this.config.killReward} $TTAW`);
+    console.log(`   Per paid play: ${this.config.perPaidPlay} $TTAW`);
+    console.log(`   First kill bonus: ${this.config.firstKillBonus} $TTAW`);
+    console.log(`   100 kills milestone: ${this.config.hundredKillsMilestone} $TTAW`);
     console.log(`   Daily cap: ${this.config.dailyEarnCap} $TTAW`);
     console.log(`   Payments mode: ${this.privy.livePayments ? 'LIVE' : 'TEST'}`);
   }
@@ -195,48 +194,49 @@ class TokenRewardSystem {
     return false;
   }
 
-  // 2. KILL REWARD
-  handleKill(privyUserId, victimSize = 0) {
+// 2. KILL REWARD — milestone-based (paid games only)
+  handleKill(privyUserId, isPaidSession = false) {
     if (!privyUserId) return false;
     const data = this.getPlayerData(privyUserId);
 
-    let reward = this.config.killReward;
-
-    if (data.sessionKills === 0) {
-      reward += this.config.firstKillBonus;
-    }
-
     data.killStreak++;
     data.sessionKills++;
-    const streakBonus = (data.killStreak - 1) * this.config.streakMultiplier;
-    reward += streakBonus;
 
-    for (const tier of this.config.victimSizeBonuses) {
-      if (victimSize > tier.minSize) reward += tier.bonus;
+    // Track total kills across all sessions (persists in memory)
+    if (!data.totalKills) data.totalKills = 0;
+    data.totalKills++;
+
+    // Milestones require paid sessions
+    if (!isPaidSession && this.config.milestoneRequiresPaid) return false;
+
+    // First kill EVER — 100 TTAW bonus
+    if (data.totalKills === 1) {
+      const reason = 'First kill ever! 🎯';
+      return this.queueReward(privyUserId, this.config.firstKillBonus, reason);
     }
 
-    const reason = `Kill #${data.sessionKills} (streak: ${data.killStreak})`;
+    // 100th kill milestone — 1000 TTAW bonus
+    if (data.totalKills === 100) {
+      const reason = '100 kills milestone! 💯';
+      return this.queueReward(privyUserId, this.config.hundredKillsMilestone, reason);
+    }
+
+    return false; // No reward for regular kills (only milestones)
+  }
+
+// 3. PER PAID PLAY REWARD — 1 TTAW per paid game session
+  handlePaidPlayReward(privyUserId) {
+    if (!privyUserId) return false;
+    const reward = this.config.perPaidPlay; // 1 TTAW
+    const reason = 'Paid play reward';
     return this.queueReward(privyUserId, reward, reason);
   }
 
-  // 3. CASHOUT BONUS
-  handleCashout(privyUserId, cashoutScore, cashoutValue) {
-    if (!privyUserId) return false;
-    if (cashoutScore < this.config.minCashoutForBonus) return false;
-
-    const reward = cashoutValue * this.config.cashoutMultiplier;
-    const reason = `Cashout bonus (score: ${cashoutScore})`;
-    return this.queueReward(privyUserId, reward, reason);
-  }
-
-  // 4. SURVIVAL REWARD
-  handleSurvivalTick(privyUserId, aliveMinutes) {
-    if (!privyUserId) return false;
-    if (aliveMinutes < 1 || aliveMinutes % 1 !== 0) return false;
-
-    const reward = this.config.survivalPerMinute;
-    const reason = `Survived ${aliveMinutes} min`;
-    return this.queueReward(privyUserId, reward, reason);
+// 4. SURVIVAL REWARD — disabled (no longer in reward config)
+  handleSurvivalTick(privyUserId) {
+    // Keeping method signature so server.js doesn't crash
+    // Re-enable in gameConstants.json if needed later
+    return false;
   }
 
   // 5. DEATH — Reset streak

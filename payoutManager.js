@@ -1,12 +1,10 @@
 // ============================================================
-// payoutManager.js — End-of-game payout system
+// payoutManager.js — End-of-game payout system (USDC)
 // ============================================================
-// Fixed: Uses privyService.sendSol() instead of raw Privy API
-// Fixed: Removed reference to non-existent solPriceRefreshMs
-// Fixed: Safety checks via privyService (LIVE_PAYMENTS/DEV_BYPASS)
+// All payouts in USDC. No SOL price oracle. No conversion math.
+// Uses privyService.sendUsdc() for all transfers.
 // ============================================================
 
-const { LAMPORTS_PER_SOL } = require('@solana/web3.js');
 require('dotenv').config();
 
 class PayoutManager {
@@ -16,12 +14,6 @@ class PayoutManager {
     this.houseWalletId = process.env.HOUSE_WALLET_ID;
 
     const payoutCfg = this.gc.economy.payouts;
-
-    // SOL price (for USD → SOL conversion, display only)
-    this.solPriceUsd = 0;
-    this.updateSolPrice();
-    // Refresh price every 5 minutes (not from gameConstants — it doesn't have this field)
-    this.priceInterval = setInterval(() => this.updateSolPrice(), 300000);
 
     // Active sessions: privyUserId → session data
     this.activeSessions = new Map();
@@ -44,27 +36,9 @@ class PayoutManager {
     // Discord webhook
     this.discordWebhookUrl = process.env.DISCORD_PAYOUT_WEBHOOK_URL || null;
 
-    console.log('✅ PayoutManager initialized');
+    console.log('✅ PayoutManager initialized (USDC)');
     console.log(`   Queue interval: ${payoutCfg.queueProcessIntervalMs}ms`);
     console.log(`   Max retries: ${this.maxRetries}`);
-  }
-
-  async updateSolPrice() {
-    try {
-      const fetch = (await import('node-fetch')).default;
-      const res = await fetch(
-        'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd'
-      );
-      const data = await res.json();
-      this.solPriceUsd = data.solana.usd;
-    } catch {
-      if (this.solPriceUsd === 0) this.solPriceUsd = 150;
-    }
-  }
-
-  usdToLamports(usd) {
-    if (this.solPriceUsd === 0) return 0;
-    return Math.floor((usd / this.solPriceUsd) * LAMPORTS_PER_SOL);
   }
 
   // ----------------------------------------------------------
@@ -90,7 +64,7 @@ class PayoutManager {
       isPaid,
       startTime: Date.now(),
       ledger: [],
-      totalAccrued: 0,
+      totalAccrued: 0,       // In USDC (e.g. 5.00 = $5.00)
       stats: {
         peakBounty: 0,
         killCount: 0,
@@ -110,14 +84,15 @@ class PayoutManager {
 
   // ----------------------------------------------------------
   // Accrue a payout entry (called when player hits a tier)
+  // Amount is in USDC (e.g. 5.00 = $5.00)
   // ----------------------------------------------------------
   accrueReward(privyUserId, amount, reason, details = {}) {
     const session = this.activeSessions.get(privyUserId);
     if (!session || session.status !== 'active') return null;
-    if (!session.isPaid) return null; // Free play gate
+    if (!session.isPaid) return null; // Free play = no payouts
 
     const entry = {
-      amount,
+      amount,       // USDC
       reason,
       details,
       timestamp: Date.now()
@@ -126,7 +101,7 @@ class PayoutManager {
     session.ledger.push(entry);
     session.totalAccrued += amount;
 
-    console.log(`💰 Accrued: +${amount.toFixed(2)} for ${session.playerName} — ${reason} (total: ${session.totalAccrued.toFixed(2)})`);
+    console.log(`💰 Accrued: +$${amount.toFixed(2)} USDC for ${session.playerName} — ${reason} (total: $${session.totalAccrued.toFixed(2)})`);
 
     return {
       newEntry: entry,
@@ -135,9 +110,10 @@ class PayoutManager {
     };
   }
 
+  // Tier payout — amount is already in USDC from gameConstants
   accrueCashoutTier(privyUserId, tierThreshold, tierPayout) {
-    return this.accrueReward(privyUserId, tierPayout / 100,
-      `Bounty Tier ${(tierPayout / 100).toFixed(2)}`, {
+    return this.accrueReward(privyUserId, tierPayout,
+      `Tier $${tierThreshold} → $${tierPayout} payout`, {
         type: 'cashout_tier',
         threshold: tierThreshold,
         payout: tierPayout
@@ -145,11 +121,12 @@ class PayoutManager {
     );
   }
 
+  // Golden mib 20% instant bonus — amount in USDC
   accrueGoldenBonus(privyUserId, bonusAmount) {
     const session = this.activeSessions.get(privyUserId);
     if (session) session.stats.goldenBonuses++;
     return this.accrueReward(privyUserId, bonusAmount,
-      `Golden Bonus (${bonusAmount.toFixed(2)})`, {
+      `Golden Bonus $${bonusAmount.toFixed(2)}`, {
         type: 'golden_bonus'
       }
     );
@@ -187,7 +164,7 @@ class PayoutManager {
 
     console.log(`\n🏁 Session ended: ${session.playerName}`);
     console.log(`   Reason: ${reason}`);
-    console.log(`   Total owed: ${session.totalAccrued.toFixed(2)}`);
+    console.log(`   Total owed: $${session.totalAccrued.toFixed(2)} USDC`);
 
     if (session.totalAccrued <= 0 || !session.isPaid) {
       this.activeSessions.delete(privyUserId);
@@ -205,12 +182,12 @@ class PayoutManager {
   handleDisconnect(privyUserId) {
     const session = this.activeSessions.get(privyUserId);
     if (!session || session.status !== 'active') return;
-    console.log(`📡 Disconnect: ${session.playerName} — paying out ${session.totalAccrued.toFixed(2)}`);
+    console.log(`📡 Disconnect: ${session.playerName} — paying out $${session.totalAccrued.toFixed(2)} USDC`);
     return this.endSession(privyUserId, 'disconnect');
   }
 
   // ==========================================================
-  //  PAYOUT EXECUTION
+  //  PAYOUT EXECUTION (USDC)
   // ==========================================================
 
   async processPendingPayouts() {
@@ -226,7 +203,7 @@ class PayoutManager {
         session.status = 'paid';
         session.payoutSignature = result.signature;
         await this.sendPayoutNotification(session, result.signature);
-        console.log(`✅ PAYOUT COMPLETE: ${session.totalAccrued.toFixed(2)} → ${session.playerName}`);
+        console.log(`✅ PAYOUT COMPLETE: $${session.totalAccrued.toFixed(2)} USDC → ${session.playerName}`);
       } else {
         session.status = 'failed';
         console.error(`❌ PAYOUT FAILED: ${result.error}`);
@@ -239,7 +216,7 @@ class PayoutManager {
         } else {
           console.error(`🚨 PAYOUT PERMANENTLY FAILED after ${this.maxRetries} retries!`);
           console.error(`   Player: ${session.playerName} (${session.privyUserId})`);
-          console.error(`   Amount: ${session.totalAccrued.toFixed(2)}`);
+          console.error(`   Amount: $${session.totalAccrued.toFixed(2)} USDC`);
           await this.sendFailureAlert(session);
         }
       }
@@ -252,7 +229,7 @@ class PayoutManager {
   }
 
   // ----------------------------------------------------------
-  // Execute single SOL transfer via privyService wrapper
+  // Execute single USDC transfer via privyService
   // ----------------------------------------------------------
   async executePayout(session) {
     try {
@@ -261,15 +238,14 @@ class PayoutManager {
         return { success: false, error: 'Player wallet not found' };
       }
 
-      const lamports = this.usdToLamports(session.totalAccrued);
-      if (lamports <= 0) {
-        return { success: false, error: 'Amount too small to transfer' };
+      if (session.totalAccrued <= 0) {
+        return { success: false, error: 'Nothing to pay out' };
       }
 
-      // ── Use privyService.sendSol() — handles safety checks internally ──
-      const result = await this.privy.sendSol(
+      // ── Send USDC directly — no conversion needed ──
+      const result = await this.privy.sendUsdc(
         walletAddress,
-        lamports,
+        session.totalAccrued,  // Already in USDC
         `Payout: ${session.playerName} (${session.endReason})`
       );
 
@@ -288,7 +264,6 @@ class PayoutManager {
 
     const survivalMins = Math.floor(session.stats.survivalTimeMs / 60000);
     const survivalSecs = Math.floor((session.stats.survivalTimeMs % 60000) / 1000);
-    const solAmount = (this.usdToLamports(session.totalAccrued) / LAMPORTS_PER_SOL).toFixed(6);
 
     const breakdownLines = session.ledger.map(e =>
       `• ${e.reason}: $${e.amount.toFixed(2)}`
@@ -297,24 +272,33 @@ class PayoutManager {
     const embed = {
       embeds: [{
         title: `💰 ${session.playerName} Cashed Out!`,
-        color: session.totalAccrued >= 1 ? 0xFFD700 : 0x00AA44,
+        color: session.totalAccrued >= 100 ? 0xFFD700 :
+               session.totalAccrued >= 10 ? 0x00FF00 : 0x3498DB,
         fields: [
-          { name: '💰 Total Paid', value: `**$${session.totalAccrued.toFixed(2)}** (${solAmount} SOL)`, inline: true },
-          { name: '⏱️ Survived', value: `${survivalMins}m ${survivalSecs}s`, inline: true },
-          { name: '🎯 Kills', value: `${session.stats.killCount}`, inline: true },
-          { name: '📊 Breakdown', value: breakdownLines.join('\n') || 'No payouts', inline: false },
           {
-            name: '🏆 Stats',
-            value: [
-              `Peak Bounty: ${session.stats.peakBounty}`,
-              `Highest Tier: ${session.stats.highestTierReached}`,
-              `Golden Bonuses: ${session.stats.goldenBonuses}`,
-              `End: ${session.endReason}`
-            ].join('\n'),
+            name: '💵 Total Payout',
+            value: `**$${session.totalAccrued.toFixed(2)} USDC**`,
+            inline: true
+          },
+          {
+            name: '⏱️ Survived',
+            value: `${survivalMins}m ${survivalSecs}s`,
+            inline: true
+          },
+          {
+            name: '🎯 Kills',
+            value: `${session.stats.killCount}`,
+            inline: true
+          },
+          {
+            name: '📊 Breakdown',
+            value: breakdownLines.join('\n') || 'No entries',
             inline: false
           }
         ],
-        footer: { text: `TX: ${txSignature.slice(0, 20)}... | MIBS.GG` },
+        footer: {
+          text: `TX: ${txSignature?.slice(0, 20)}...`
+        },
         timestamp: new Date().toISOString()
       }]
     };
@@ -327,36 +311,41 @@ class PayoutManager {
         body: JSON.stringify(embed)
       });
     } catch (err) {
-      console.error(`⚠️ Discord notification failed: ${err.message}`);
+      console.error(`⚠️  Discord notification failed: ${err.message}`);
     }
   }
 
+  // ----------------------------------------------------------
+  // Discord failure alert
+  // ----------------------------------------------------------
   async sendFailureAlert(session) {
     if (!this.discordWebhookUrl) return;
+
     try {
       const fetch = (await import('node-fetch')).default;
       await fetch(this.discordWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          content: `🚨 **PAYOUT FAILED** — Manual intervention needed!\n` +
-            `Player: ${session.playerName} (${session.privyUserId})\n` +
-            `Amount: $${session.totalAccrued.toFixed(2)}\n` +
-            `Reason: ${session.endReason}\n` +
-            `Ledger entries: ${session.ledger.length}`
+          content: `🚨 **PAYOUT FAILED** — ${session.playerName} owed $${session.totalAccrued.toFixed(2)} USDC (${session.endReason}). Manual intervention required!`
         })
       });
-    } catch (err) {
-      console.error(`⚠️ Failure alert failed: ${err.message}`);
-    }
+    } catch {}
+  }
+
+  // ----------------------------------------------------------
+  // Stats & monitoring
+  // ----------------------------------------------------------
+  getStats() {
+    return {
+      activeSessions: this.activeSessions.size,
+      pendingPayouts: this.pendingPayouts.length,
+      isProcessing: this.isProcessing
+    };
   }
 
   destroy() {
     clearInterval(this.payoutInterval);
-    clearInterval(this.priceInterval);
-    for (const session of this.pendingPayouts) {
-      console.log(`⚠️ Unpaid at shutdown: ${session.playerName} — $${session.totalAccrued.toFixed(2)}`);
-    }
   }
 }
 

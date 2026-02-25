@@ -14,7 +14,8 @@ const app = express();
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
 
@@ -43,12 +44,15 @@ const StateBackup = require('./stateBackup');
 const auditLog = new AuditLog(null, gameConstants);
 const stateBackup = new StateBackup(payouts, feeManager, spendVerifier, null, gameConstants);
 
-// Restore any saved state from last server run
 stateBackup.restore().then(() => {
-  console.log('âœ… State restoration complete');
-}).catch(err => {
-  console.log('â„¹ï¸  No state to restore:', err.message);
-});
+    // ═══ FIX: Restore vault state as proper types (JSON kills Sets) ═══
+    gameState.exhaustedTiers = new Set(gameState.exhaustedTiers || []);
+    gameState.usedBuyInSignatures = new Set(gameState.usedBuyInSignatures || []);
+    gameState.goldenVaultFloor = gameState.goldenVaultFloor || 0;
+    console.log('✅ State restoration complete');
+  }).catch(err => {
+    console.log('ℹ️ No state to restore:', err.message);
+  });
 
 const killedThisFrame = new Set(); // âœ… FIX: Track kills to prevent double-kill crash
 // ============================================================================
@@ -103,6 +107,8 @@ const gameState = {
   players: {},
   bots: [],
   coins: [],
+  exhaustedTiers: new Set(),
+  goldenVaultFloor: 0,
   lastUpdate: Date.now(),
   spatialGrid: null
 };
@@ -125,6 +131,9 @@ function updatePeeweePhysics(dt) {
     .filter(m => m.alive);
   
 for (const peewee of gameState.coins) {
+    // ✅ Skip ALL physics for coins being sucked in — suction is uninterruptible
+    if (peewee._inSuction) continue;
+    
     // Random curve drift (each peewee curves slightly different)
     if (!peewee._curve) {
       peewee._curve = (Math.random() - 0.5) * 0.02;
@@ -161,8 +170,8 @@ for (const peewee of gameState.coins) {
       peewee._spinSpeed = (Math.random() * (spinSpeedMax - spinSpeedMin) + spinSpeedMin) * (Math.random() > 0.5 ? 1 : -1);
     }
     
-    if (speed > spinVelocityThreshold) {
-      const spinMultiplier = Math.min(speed / 100, 2.0);
+if (speed > spinVelocityThreshold) {
+      const spinMultiplier = Math.min(speed / 100, 6.0);
       peewee.rotation = (peewee.rotation || 0) + (peewee._spinSpeed * spinMultiplier * dt);
     }
     
@@ -260,8 +269,9 @@ for (const peewee of gameState.coins) {
         const numSegments = Math.floor(bodyLength / segmentSpacing);
         
         // âœ… Only check first 10 segments for performance
-        for (let segIdx = 1; segIdx <= Math.min(numSegments, 10); segIdx++) {
-          const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
+// ✅ Check every 2nd segment across full body length
+        for (let segIdx = 1; segIdx <= numSegments; segIdx += 2) {
+           const sample = marble.pathBuffer.sampleBack(segIdx * segmentSpacing);
           
           const segDx = peewee.x - sample.x;
           const segDy = peewee.y - sample.y;
@@ -356,6 +366,79 @@ function checkRateLimit(socketId, action) {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+// ============================================================================
+// GOLDEN VAULT HELPERS
+// ============================================================================
+
+function getVaultFloorForTier(tierThreshold) {
+  const floors = gameConstants.goldenVault?.vaultFloors || [];
+  let bestFloor = 0;
+  for (let i = 0; i < floors.length; i++) {
+    if (floors[i].tierThreshold <= tierThreshold) {
+      bestFloor = floors[i].vaultFloor;
+    }
+  }
+  return bestFloor;
+}
+
+function findGoldenMib() {
+  const allAlive = [
+    ...Object.values(gameState.players).filter(p => p.alive),
+    ...gameState.bots.filter(b => b.alive)
+  ];
+  return allAlive.find(m => m.isGolden) || null;
+}
+
+function findSecondHighestBounty(excludeId) {
+  const allAlive = [
+    ...Object.values(gameState.players).filter(p => p.alive && p.id !== excludeId),
+    ...gameState.bots.filter(b => b.alive && b.id !== excludeId)
+  ];
+  if (allAlive.length === 0) return null;
+  return allAlive.reduce((prev, cur) => (cur.bounty || 0) > (prev.bounty || 0) ? cur : prev);
+}
+
+
+
+
+function marble_alive_false_only(marble) {
+  if (!marble) return;
+  marble.alive = false;
+  // Drop peewees for length (no $ value, just gameplay)
+  const dropInfo = calculateBountyDrop(marble, gameConstants);
+  const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants, marble.lengthScore);
+  const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
+  
+  for (let i = 0; i < coinsToSpawn; i++) {
+    let spawnX = marble.x;
+    let spawnY = marble.y;
+    if (marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
+      const bodyLength = marble.lengthScore * 2;
+      const distanceAlong = (i / coinsToSpawn) * bodyLength;
+      const sample = marble.pathBuffer.sampleBack(distanceAlong);
+      if (sample) { spawnX = sample.x; spawnY = sample.y; }
+    }
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 20 + Math.random() * 40;
+    const explodeSpeed = 100 + Math.random() * 80;
+    
+    gameState.coins.push({
+      id: `coin_${Date.now()}_${Math.random()}_${i}`,
+      x: spawnX + Math.cos(angle) * distance,
+      y: spawnY + Math.sin(angle) * distance,
+      vx: Math.cos(angle) * explodeSpeed,
+      vy: Math.sin(angle) * explodeSpeed,
+      growthValue: Math.floor(dropDist.valuePerDrop) || 5,
+      radius: gameConstants.peewee?.radius || 50,
+      mass: gameConstants.peewee?.mass || 2.0,
+      friction: gameConstants.peewee?.friction || 0.92,
+      marbleType: marble.marbleType || 'GALAXY1',
+      rotation: 0,
+      spawnTime: Date.now()
+    });
+  }
+}
+
 
 function calculateBountyDrop(marble, C) {
   const totalValue = marble.lengthScore * (C.collision?.dropValueMultiplier || 0.5);
@@ -964,7 +1047,7 @@ function checkCoinCollisions() {
         
         // âœ… Accelerating pull - gets STRONGER near head
         const distanceRatio = dist / suctionRadius; // 1.0 at edge, 0.0 at head
-        const pullStrength = Math.pow(1 - distanceRatio, 2) * 0.4; // Quadratic acceleration
+      const pullStrength = Math.pow(1 - distanceRatio, 2) * 0.55; // Quadratic acceleration (25% faster)
         
         // Calculate direction to marble
         const dx = marble.x - coin.x;
@@ -1121,6 +1204,357 @@ app.get('/api/constants', (req, res) => {
   res.json(gameConstants);
 });
 
+// ── Validate paid play password (before USDC is sent) ──
+app.post('/api/validate-password', (req, res) => {
+  const gateEnabled = gameConstants.economy?.passwordGate?.enabled;
+  const correctPassword = process.env.PAID_PLAY_PASSWORD;
+
+  // If password gate is disabled, always allow
+  if (!gateEnabled) {
+    return res.json({ valid: true, devBypass: process.env.DEV_BYPASS === 'true' });
+  }
+
+  // Check password
+  if (!req.body?.password || req.body.password !== correctPassword) {
+    return res.json({ valid: false });
+  }
+
+  // Password correct — tell client whether to skip USDC
+  res.json({
+    valid: true,
+    devBypass: process.env.DEV_BYPASS === 'true'
+  });
+});
+
+// ── Validate withdrawal request (promo lock enforcement) ──
+app.post('/api/request-withdrawal', async (req, res) => {
+  const { privyToken, amount, destinationAddress } = req.body;
+
+  if (!privyToken || !amount || !destinationAddress) {
+    return res.status(400).json({ approved: false, reason: 'Missing required fields' });
+  }
+
+  // Verify the Privy token to get the user ID
+  let privyUserId;
+  try {
+    console.log('🔍 WITHDRAWAL TOKEN DEBUG:', typeof privyToken, privyToken?.substring(0, 30) + '...', 'length:', privyToken?.length);
+    const claims = await rewards.privy.verifyAuthToken(privyToken);
+    privyUserId = claims.userId;
+  } catch (err) {
+    return res.status(401).json({ approved: false, reason: 'Invalid authentication' });
+  }
+
+  // Validate destination address (basic Solana address check)
+  if (!destinationAddress || destinationAddress.length < 32 || destinationAddress.length > 44) {
+    return res.json({ approved: false, reason: 'Invalid Solana wallet address' });
+  }
+
+  // Validate amount
+  const amountUsdc = parseFloat(amount);
+  if (!amountUsdc || amountUsdc < 0.01) {
+    return res.json({ approved: false, reason: 'Minimum withdrawal is 0.01 USDC' });
+  }
+
+  try {
+    // Look up player in Supabase
+    const { data: player, error } = await supabase
+      .from('players')
+      .select('promo_granted, paid_games_played, wallet_address')
+      .eq('privy_id', privyUserId)
+      .single();
+
+    if (error || !player) {
+      return res.json({ approved: false, reason: 'Player not found' });
+    }
+
+    // ═══ PROMO LOCK CHECK ═══
+    if (player.promo_granted) {
+      const lockConfig = gameConstants.economy.promoGrant.withdrawalLock;
+      const paidGames = player.paid_games_played || 0;
+      const minGames = lockConfig.minPaidGames; // 20
+
+      // Check if player has met play-through requirement
+      // Lock is lifted if: 20+ paid games played OR balance < $1.10
+      // We can't check balance server-side easily, so we check games only
+      // (balance check happens client-side as secondary unlock)
+      if (paidGames < minGames) {
+        const remaining = minGames - paidGames;
+        return res.json({
+          approved: false,
+          reason: `Promo withdrawal locked: play ${remaining} more paid game${remaining === 1 ? '' : 's'} to unlock (${paidGames}/${minGames})`,
+          promoLocked: true,
+          paidGamesPlayed: paidGames,
+          paidGamesRequired: minGames
+        });
+      }
+    }
+
+    // ═══ APPROVED ═══
+    const withdrawalId = `WD_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Log the approval
+    if (auditLog) {
+      auditLog.log('WITHDRAWAL_APPROVED', {
+        privyUserId,
+        withdrawalId,
+        amount: amountUsdc,
+        destination: destinationAddress,
+        promoGranted: player.promo_granted,
+        paidGamesPlayed: player.paid_games_played
+      });
+    }
+
+    console.log(`✅ Withdrawal approved: ${privyUserId} | $${amountUsdc.toFixed(2)} USDC → ${destinationAddress.slice(0, 8)}... | ID: ${withdrawalId}`);
+
+    return res.json({
+      approved: true,
+      withdrawalId,
+      amount: amountUsdc,
+      destination: destinationAddress
+    });
+
+  } catch (err) {
+    console.error('❌ Withdrawal validation error:', err.message);
+    return res.status(500).json({ approved: false, reason: 'Server error — please try again' });
+  }
+});
+
+// ── Report completed withdrawal (audit trail) ──
+app.post('/api/report-withdrawal', async (req, res) => {
+  const { privyToken, withdrawalId, txSignature, amount, destination } = req.body;
+
+  if (!privyToken || !withdrawalId || !txSignature) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  let privyUserId;
+  try {
+ const claims = await rewards.privy.verifyAuthToken(privyToken);
+    privyUserId = claims.userId;
+  } catch {
+    return res.status(401).json({ error: 'Invalid authentication' });
+  }
+
+  // Log to audit trail
+  if (auditLog) {
+    auditLog.log('WITHDRAWAL_COMPLETED', {
+      privyUserId,
+      withdrawalId,
+      txSignature,
+      amount,
+      destination
+    });
+  }
+
+  console.log(`💸 Withdrawal complete: ${privyUserId} | $${amount} USDC | TX: ${txSignature?.slice(0, 16)}...`);
+
+  res.json({ success: true });
+});
+
+// ── Grant promo USDC to Discord-linked player ──
+app.post('/api/grant-promo', async (req, res) => {
+  const { adminKey, privyUserId } = req.body;
+
+  // Admin-only — protected by a secret key in .env
+  if (adminKey !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  if (!privyUserId) {
+    return res.status(400).json({ error: 'Missing privyUserId' });
+  }
+
+  const promoConfig = gameConstants.economy.promoGrant;
+
+  try {
+    // Check if already granted
+    const { data: player } = await supabase
+      .from('players')
+      .select('promo_granted, discord_id, wallet_address')
+      .eq('privy_id', privyUserId)
+      .single();
+
+    if (!player) return res.json({ error: 'Player not found' });
+    if (player.promo_granted) return res.json({ error: 'Promo already granted' });
+    if (promoConfig.requiresDiscord && !player.discord_id) {
+      return res.json({ error: 'Discord link required for promo' });
+    }
+    if (!player.wallet_address) return res.json({ error: 'No wallet address on file' });
+
+    // Check max grants
+    const { count } = await supabase
+      .from('players')
+      .select('*', { count: 'exact', head: true })
+      .eq('promo_granted', true);
+
+    if (count >= promoConfig.maxGrants) {
+      return res.json({ error: `Max promos reached (${promoConfig.maxGrants})` });
+    }
+
+    // Send promo USDC
+    const result = await rewards.privy.sendPromoUsdc(
+      player.wallet_address,
+      promoConfig.amountUsdc,
+      `Promo grant for ${privyUserId}`
+    );
+
+    if (!result.success) {
+      return res.json({ error: result.error || 'Transfer failed' });
+    }
+
+    // Mark as granted in Supabase
+    await supabase
+      .from('players')
+      .update({ promo_granted: true, promo_granted_at: new Date().toISOString() })
+      .eq('privy_id', privyUserId);
+
+    if (auditLog) {
+      auditLog.log('PROMO_GRANTED', {
+        privyUserId,
+        amount: promoConfig.amountUsdc,
+        txSignature: result.signature
+      });
+    }
+
+    console.log(`🎁 Promo granted: ${privyUserId} | $${promoConfig.amountUsdc} USDC | TX: ${result.signature}`);
+    res.json({ success: true, amount: promoConfig.amountUsdc, signature: result.signature });
+
+  } catch (err) {
+    console.error('❌ Promo grant error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Solana RPC Proxy (keeps Helius key server-side) ──
+app.post('/api/rpc-proxy', async (req, res) => {
+  const heliusKey = process.env.HELIUS_API_KEY;
+  if (!heliusKey) {
+    return res.status(500).json({ error: 'RPC not configured' });
+  }
+
+// Only allow specific RPC methods needed for signing + Privy wallet ops
+  const allowedMethods = [
+    'getLatestBlockhash',
+    'getRecentBlockhash',
+    'sendRawTransaction',
+    'sendTransaction',
+    'simulateTransaction',
+    'confirmTransaction',
+    'getBalance',
+    'getAccountInfo',
+    'getTokenAccountsByOwner',
+    'getSignatureStatuses',
+    'getSignaturesForAddress',
+    'getFeeForMessage',
+    'getMinimumBalanceForRentExemption',
+    'getEpochInfo',
+    'getSlot',
+    'getVersion',
+    'isBlockhashValid',
+  ];
+
+  const body = req.body;
+  if (!body || !body.method) {
+    return res.status(400).json({ error: 'Invalid RPC request' });
+  }
+
+  if (!allowedMethods.includes(body.method)) {
+    console.warn(`⚠️ RPC proxy blocked method: ${body.method}`);
+    return res.status(403).json({ error: `Method not allowed: ${body.method}` });
+  }
+
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${heliusKey}`;
+
+    const rpcRes = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const rpcData = await rpcRes.json();
+    res.json(rpcData);
+  } catch (err) {
+    console.error('❌ RPC proxy error:', err.message);
+    res.status(502).json({ error: 'RPC request failed' });
+  }
+});
+
+// ── Need Gas: send 0.01 SOL to player if they're low ──
+const gasRequestCooldowns = new Map(); // privyId → timestamp
+app.post('/api/request-gas', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Missing auth token' });
+    }
+    const token = authHeader.split(' ')[1];
+
+    // Verify Privy token
+    let userId;
+    try {
+     const verified = await rewards.privy.verifyAuthToken(token);
+      userId = verified.userId;
+    } catch {
+      return res.status(401).json({ error: 'Invalid auth token' });
+    }
+
+    // Rate limit: once per 24 hours per user
+    const lastRequest = gasRequestCooldowns.get(userId);
+    const cooldownMs = 24 * 60 * 60 * 1000;
+    if (lastRequest && Date.now() - lastRequest < cooldownMs) {
+      const hoursLeft = Math.ceil((cooldownMs - (Date.now() - lastRequest)) / 3600000);
+      return res.json({ success: false, error: `Gas available again in ~${hoursLeft}h` });
+    }
+
+// Get wallet address from request body (client sends it)
+    const walletAddress = req.body.walletAddress;
+    if (!walletAddress) {
+      return res.json({ success: false, error: 'No wallet address provided' });
+    }
+    // Check current SOL balance
+    const fetch = (await import('node-fetch')).default;
+    const rpcUrl = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+ const balRes = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1,
+        method: 'getBalance',
+        params: [walletAddress]
+      })
+    });
+    const balData = await balRes.json();
+    const currentSol = (balData?.result?.value || 0) / 1e9;
+
+    if (currentSol >= 0.0002) {
+      return res.json({ success: false, error: 'Wallet already has enough SOL for gas' });
+    }
+
+    // Send 0.0001 SOL from house wallet
+    const lamportsToSend = 100_000; // 0.0001 SOL
+  const result = await rewards.privy.sendSol(
+      walletAddress,
+      lamportsToSend,
+      `Gas top-up for ${userId}`
+    );
+
+    if (result.success) {
+      gasRequestCooldowns.set(userId, Date.now());
+     console.log(`⛽ Gas sent: 0.0001 SOL → ${walletAddress} (${userId})`);
+      if (auditLog) {
+        auditLog.log('GAS_TOPUP', { userId, walletAddress, lamports: lamportsToSend, txSignature: result.signature });
+      }
+      return res.json({ success: true, signature: result.signature });
+    } else {
+      return res.json({ success: false, error: result.error || 'Transfer failed' });
+    }
+  } catch (err) {
+    console.error('❌ Gas request error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -1188,7 +1622,7 @@ app.get('/api/wallet-balance', async (req, res) => {
       const priceRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
       const priceData = await priceRes.json();
       usd = sol * (priceData?.solana?.usd || 0);
-   } catch { /* price fetch optional */ }
+    } catch { /* price fetch optional */ }
 
     // Get TTAW token balance
     let ttaw = 0;
@@ -1216,16 +1650,37 @@ app.get('/api/wallet-balance', async (req, res) => {
       }
     } catch (e) { console.warn('[API] TTAW balance fetch failed:', e.message); }
 
-    res.json({ sol, usd, lamports, ttaw });
+    // Get USDC token balance
+    let usdc = 0;
+    try {
+      const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+      const usdcRes = await fetch(rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 3,
+          method: 'getTokenAccountsByOwner',
+          params: [
+            address,
+            { mint: usdcMint },
+            { encoding: 'jsonParsed' }
+          ]
+        })
+      });
+      const usdcData = await usdcRes.json();
+      const usdcAccounts = usdcData?.result?.value;
+      if (usdcAccounts && usdcAccounts.length > 0) {
+        usdc = usdcAccounts[0].account.data.parsed.info.tokenAmount.uiAmount || 0;
+      }
+    } catch (e) { console.warn('[API] USDC balance fetch failed:', e.message); }
 
+    res.json({ sol, usd, lamports, ttaw, usdc });
 
   } catch (err) {
     console.error('[API] wallet-balance error:', err.message);
     res.status(500).json({ error: 'Failed to fetch balance' });
   }
 });
-
-
 
 // ============================================================================
 // FUNCTIONS THAT USE io (must be after io initialization)
@@ -1250,18 +1705,99 @@ function checkCashoutTiers(player) {
   
   const tiers = gameConstants.cashout.tiers;
   const cashoutsThisCheck = [];
+  const jackpotThreshold = gameConstants.goldenVault?.jackpotThreshold || 1000000;
   
-  // âœ… SAWTOOTH: Keep checking while bounty crosses current tier
   while (player.nextTierIndex < tiers.length) {
     const tier = tiers[player.nextTierIndex];
     
     if (player.bounty >= tier.threshold) {
+      
+// ═══ TIER EXHAUSTION CHECK (jackpot-tier only) ═══
+      // Normal tiers reset per-player via nextTierIndex on death
+      // Only jackpot-level tiers use global exhaustion
+      if (tier.threshold >= (gameConstants.goldenVault?.jackpotThreshold || 1000000) && gameState.exhaustedTiers.has(tier.threshold)) {
+        console.log(`⏭️ JACKPOT TIER EXHAUSTED: $${tier.threshold} (skipping for ${player.name})`);
+        player.nextTierIndex++;
+        continue;
+      }
+      
+      // ═══ JACKPOT CHECK: $1M+ threshold ═══
+      if (tier.threshold >= jackpotThreshold) {
+        const jackpotAmount = player.bounty;
+        player.totalPayout = (player.totalPayout || 0) + jackpotAmount;
+        player.bounty = 0;
+        player.alive = false;
+        
+        cashoutsThisCheck.push({
+          tierIndex: player.nextTierIndex,
+          amount: jackpotAmount,
+          total: player.totalPayout,
+          isJackpot: true
+        });
+        
+        gameState.exhaustedTiers.add(tier.threshold);
+        
+        console.log(`🎰 ═══════════════════════════════════════`);
+        console.log(`🎰 JACKPOT!!! ${player.name}`);
+        console.log(`🎰 Paid: $${jackpotAmount.toFixed(2)} | Total: $${player.totalPayout.toFixed(2)}`);
+        console.log(`🎰 ═══════════════════════════════════════`);
+        
+        // Economy reset
+        gameState.exhaustedTiers.clear();
+        gameState.goldenVaultFloor = 0;
+        console.log(`🔄 ECONOMY RESET: All tiers refreshed, vault floor cleared`);
+        
+        // Emit jackpot to winner
+        io.to(player.id).emit('jackpot', {
+          amount: jackpotAmount,
+          total: player.totalPayout
+        });
+        
+        // Announce to entire lobby
+        io.emit('jackpotAnnouncement', {
+          playerName: player.name,
+          amount: jackpotAmount
+        });
+        
+        stateBackup.saveNow();
+        
+        // $TTAW rewards for jackpot
+        if (player.privyId && player._isPaidSession) {
+          payouts.accrueCashoutTier(player.privyId, tier.threshold, jackpotAmount);
+        }
+        
+        // Remove player from game after brief delay (let events emit first)
+        const jackpotPlayerId = player.id;
+        setTimeout(() => {
+          delete gameState.players[jackpotPlayerId];
+          io.emit('playerLeft', { playerId: jackpotPlayerId });
+          updateGoldenMarble();
+        }, 500);
+        
+        break;
+      }
+      
+      // ═══ NORMAL TIER PAYOUT ═══
       const payout = tier.payout;
       
       if (payout > 0) {
         const bountyBefore = player.bounty;
-        player.totalPayout += payout;
-        player.bounty -= payout;  // âœ… SAWTOOTH: Reduce bounty by payout amount
+        player.totalPayout = (player.totalPayout || 0) + payout;
+        player.bounty -= payout;
+        
+ // Mark tier as exhausted only for jackpot-level tiers
+        if (tier.threshold >= (gameConstants.goldenVault?.jackpotThreshold || 1000000)) {
+          gameState.exhaustedTiers.add(tier.threshold);
+        }
+        
+        // Update vault floor if this player is Golden
+        if (player.isGolden) {
+          const newVaultFloor = getVaultFloorForTier(tier.threshold);
+          if (newVaultFloor > gameState.goldenVaultFloor) {
+            console.log(`🏦 VAULT FLOOR UP: $${gameState.goldenVaultFloor} → $${newVaultFloor} (triggered $${tier.threshold} tier)`);
+            gameState.goldenVaultFloor = newVaultFloor;
+          }
+        }
         
         cashoutsThisCheck.push({
           tierIndex: player.nextTierIndex,
@@ -1269,25 +1805,22 @@ function checkCashoutTiers(player) {
           total: player.totalPayout
         });
         
-        console.log(`ðŸ’° SAWTOOTH CASHOUT! | ${player.name} | Tier ${player.nextTierIndex}: $${payout} | Bounty: $${bountyBefore.toFixed(2)} â†’ $${player.bounty.toFixed(2)} | Total paid: $${player.totalPayout}`);
-      // â”€â”€ Immediate backup: money just changed â”€â”€
+        console.log(`💰 CASHOUT: ${player.name} | Tier $${tier.threshold}: payout $${payout} | Bounty: $${bountyBefore.toFixed(2)} → $${player.bounty.toFixed(2)} | Total paid: $${player.totalPayout.toFixed(2)}`);
         stateBackup.saveNow();
-// â”€â”€ $TTAW: Accrue payout for this tier â”€â”€
+        
+        // $TTAW rewards
         if (player.privyId && player._isPaidSession) {
           payouts.accrueCashoutTier(player.privyId, tier.threshold, payout);
         }
-        // â”€â”€ $TTAW: Award tier bonus tokens â”€â”€
         if (player.privyId) {
           const tierBonus = payout * (gameConstants.economy?.rewards?.cashoutBonusRate || 0.10);
           rewards.queueReward(player.privyId, tierBonus, `cashout_tier_${player.nextTierIndex}`);
         }
-
-
       }
       
       player.nextTierIndex++;
     } else {
-      break;  // Haven't reached next tier yet
+      break;
     }
   }
   
@@ -1303,7 +1836,9 @@ function killMarble(marble, killerId) {
     return;
   }
   killedThisFrame.add(marble.id);
-  
+  // ═══ RESET TIER INDEX ON DEATH — player can re-earn all tiers next life ═══
+  marble.nextTierIndex = 0;
+
   marble.alive = false;
   
   const dropInfo = calculateBountyDrop(marble, gameConstants);
@@ -1354,67 +1889,165 @@ for (let i = 0; i < coinsToSpawn; i++) {
   
   if (killerId) {
     killer = gameState.players[killerId];
-    const socket_killer_privyId = killer?.privyId || null;
-    if (!killer) killer = gameState.bots.find(b => b.id === killerId);
+     if (!killer) killer = gameState.bots.find(b => b.id === killerId);
     
     if (killer) {
       killerName = killer.name || 'Unknown';
       deathType = 'player';
+  
       
-if (killer.alive) {
-        const bountyGained = dropInfo.bountyValue;
+ if (killer.alive) {
+        const victimBounty = dropInfo.bountyValue;
+        const vaultConfig = gameConstants.goldenVault;
         killer.kills = (killer.kills || 0) + 1;
+        const socket_killer_privyId = killer?.privyId || null;
         
-        // âœ… GOLDEN 20% ABSORPTION TAX: Take off the top BEFORE adding to bounty
-        let actualBountyAdded = bountyGained;
-        let goldenPayout = 0;
-        
-        if (killer.isGolden && bountyGained > 0) {
-          goldenPayout = bountyGained * 0.20;
-          actualBountyAdded = bountyGained - goldenPayout;  // Only 80% goes to bounty
-          console.log(`ðŸ¥‡ GOLDEN TAX: ${killer.name} | Absorbed $${bountyGained} | 20% tax: $${goldenPayout.toFixed(2)} paid | 80%: $${actualBountyAdded.toFixed(2)} added to bounty`);
-        }
-        
-        killer.bounty = (killer.bounty || 0) + actualBountyAdded;
-        
-        if (!killer.isBot) {
-          // âœ… Golden instant payout (BEFORE tier check, since bounty is already reduced)
-          if (goldenPayout > 0) {
+        let bountyGainedForNotification = 0;
+
+        // ═══════════════════════════════════════════════════════
+        // CASE 1: VICTIM IS GOLDEN MIB → Vault Transfer Sequence
+        // ═══════════════════════════════════════════════════════
+        if (marble.isGolden && victimBounty > 0) {
+          const vaultFloor = gameState.goldenVaultFloor || 0;
+          const transferable = Math.max(0, victimBounty - vaultFloor);
+          
+          console.log(`🏦 VAULT TRANSFER: ${marble.name} killed by ${killer.name}`);
+          console.log(`   Bounty: $${victimBounty.toFixed(2)} | Vault: $${vaultFloor} | Transferable: $${transferable.toFixed(2)}`);
+          
+          // Step 2: Transfer only "up for grabs" portion
+          killer.bounty = (killer.bounty || 0) + transferable;
+          
+          // Step 3: Killer progresses through tiers on the transferable amount
+          if (!killer.isBot) {
+            const cashouts = checkCashoutTiers(killer);
+            if (cashouts && cashouts.length > 0) {
+              console.log(`💰 VAULT KILL TIERS: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty after: $${killer.bounty.toFixed(2)}`);
+              io.to(killer.id).emit('cashout', {
+                tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                total: killer.totalPayout,
+                bountyGained: transferable
+              });
+              // If jackpot was hit, killer is removed — skip vault inheritance
+              if (cashouts.some(c => c.isJackpot)) {
+                console.log(`🎰 JACKPOT during vault transfer! ${killer.name} removed.`);
+                bountyGainedForNotification = transferable;
+                // Skip Step 4-6, player is gone
+              }
+            }
+            
+            // Step 4: Add vault floor on top (only if not jackpotted out)
+            if (killer.alive) {
+              killer.bounty += vaultFloor;
+              console.log(`🏦 VAULT INHERITED: ${killer.name} | New bounty: $${killer.bounty.toFixed(2)} | Vault floor: $${vaultFloor}`);
+            }
+          } else {
+            // Bot killer — just add vault floor directly
+            killer.bounty += vaultFloor;
+          }
+          
+          bountyGainedForNotification = transferable;
+
+        // ═══════════════════════════════════════════════════════
+        // CASE 2: KILLER IS GOLDEN MIB → 20% wallet, 80% bounty
+        // ═══════════════════════════════════════════════════════
+        } else if (killer.isGolden && victimBounty > 0) {
+          const goldenPayout = victimBounty * (vaultConfig?.instantCashRate || 0.20);
+          const bountyAdded = victimBounty - goldenPayout;
+          
+          killer.bounty = (killer.bounty || 0) + bountyAdded;
+          
+          console.log(`🥇 GOLDEN KILL: ${killer.name} | Absorbed $${victimBounty.toFixed(2)} | 20%: $${goldenPayout.toFixed(2)} to wallet | 80%: $${bountyAdded.toFixed(2)} to bounty`);
+          
+          if (!killer.isBot) {
+            // Golden instant payout to wallet
             killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
-            // â”€â”€ Immediate backup: golden payout accrued â”€â”€
             stateBackup.saveNow();
             io.to(killer.id).emit('cashout', {
               tiers: [{ amount: goldenPayout, isGolden: true }],
               total: killer.totalPayout,
               isGolden: true,
-              bountyGained: bountyGained
+              bountyGained: victimBounty
             });
+            
+            // Check tier cashouts on the bounty portion
+            const cashouts = checkCashoutTiers(killer);
+            if (cashouts && cashouts.length > 0) {
+              console.log(`💰 GOLDEN TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty: $${killer.bounty.toFixed(2)}`);
+              io.to(killer.id).emit('cashout', {
+                tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                total: killer.totalPayout,
+                bountyGained: bountyAdded
+              });
+            }
           }
           
-          // âœ… SAWTOOTH: Check tier cashouts (bounty may cross tier, then get reduced)
-          const cashouts = checkCashoutTiers(killer);
-          
-          if (cashouts && cashouts.length > 0) {
-            console.log(`ðŸ’° SAWTOOTH TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty after: $${killer.bounty.toFixed(2)} | totalPayout=$${killer.totalPayout}`);
-            io.to(killer.id).emit('cashout', {
-              tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false })),
-              total: killer.totalPayout,
-              bountyGained: actualBountyAdded
-            });
-          }
-          
-          // Send kill notification
+          bountyGainedForNotification = bountyAdded;
 
-// â”€â”€ $TTAW: Award kill tokens â”€â”€
+        // ═══════════════════════════════════════════════════════
+        // CASE 3: REGULAR PVP → 10% tax to Golden Mib
+        // ═══════════════════════════════════════════════════════
+        } else {
+          const taxRate = vaultConfig?.passiveTaxRate || 0.10;
+          const taxExemptMax = vaultConfig?.taxExemptMaxBounty || 1;
+          
+          const goldenMib = findGoldenMib();
+          
+          // Tax exempt: both at $1 or less, OR no Golden Mib exists
+          const isExempt = !goldenMib || (victimBounty <= taxExemptMax && (killer.bounty || 0) <= taxExemptMax);
+          
+          let bountyToKiller = victimBounty;
+          let taxToGolden = 0;
+          
+          if (!isExempt) {
+            taxToGolden = victimBounty * taxRate;
+            bountyToKiller = victimBounty - taxToGolden;
+            goldenMib.bounty = (goldenMib.bounty || 0) + taxToGolden;
+            
+            console.log(`👑 GOLDEN TAX: ${goldenMib.name} +$${taxToGolden.toFixed(2)} (10% of $${victimBounty.toFixed(2)}) | Golden bounty now: $${goldenMib.bounty.toFixed(2)}`);
+            
+            // Check if Golden Mib's passive income triggers tiers
+            if (!goldenMib.isBot) {
+              const goldenCashouts = checkCashoutTiers(goldenMib);
+              if (goldenCashouts && goldenCashouts.length > 0) {
+                io.to(goldenMib.id).emit('cashout', {
+                  tiers: goldenCashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                  total: goldenMib.totalPayout,
+                  bountyGained: taxToGolden
+                });
+              }
+            }
+          }
+          
+          killer.bounty = (killer.bounty || 0) + bountyToKiller;
+          
+          if (!killer.isBot) {
+            const cashouts = checkCashoutTiers(killer);
+            if (cashouts && cashouts.length > 0) {
+              console.log(`💰 REGULAR KILL TIERS: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty: $${killer.bounty.toFixed(2)}`);
+              io.to(killer.id).emit('cashout', {
+                tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                total: killer.totalPayout,
+                bountyGained: bountyToKiller
+              });
+            }
+          }
+          
+          bountyGainedForNotification = bountyToKiller;
+        }
+        
+        // ═══════════════════════════════════════════════════════
+        // KILL NOTIFICATION + $TTAW (all cases)
+        // ═══════════════════════════════════════════════════════
+        if (!killer.isBot && killer.alive) {
           if (socket_killer_privyId) {
             rewards.handleKill(socket_killer_privyId);
           }
-
+          
           io.to(killer.id).emit('playerKill', {
             killerId: killer.id,
             victimId: marble.id,
             victimName: marble.name || 'Player',
-            bountyGained: actualBountyAdded
+            bountyGained: bountyGainedForNotification
           });
         }
       }
@@ -1467,7 +2100,8 @@ if (killer.alive) {
             .update({
               total_kills: (existing.total_kills || 0) + sessionKills,
               total_earned: (existing.total_earned || 0) + sessionEarned,
-              games_played: (existing.games_played || 0) + 1,
+             games_played: (existing.games_played || 0) + 1,
+              paid_games_played: (existing.paid_games_played || 0) + (marble.isPaidSession ? 1 : 0),
               highest_bounty: newHighest,
             })
             .eq('privy_id', deathPrivyId)
@@ -1505,13 +2139,31 @@ io.emit('marbleDeath', {
 io.on('connection', (socket) => {
   console.log(`ðŸ”Œ Player connected: ${socket.id.substring(0, 8)}`);
   
-  socket.emit('init', {
+socket.emit('init', {
     playerId: socket.id,
     constants: gameConstants,
     gameState: {
-      players: gameState.players,
-      bots: gameState.bots,
-      coins: gameState.coins
+      players: Object.fromEntries(
+        Object.entries(gameState.players)
+          .filter(([id, p]) => p && p.alive)
+          .map(([id, p]) => [id, {
+            id: p.id, name: p.name, marbleType: p.marbleType,
+            x: p.x, y: p.y, angle: p.angle, targetAngle: p.targetAngle,
+            lengthScore: p.lengthScore, bounty: p.bounty, kills: p.kills,
+            alive: p.alive, isGolden: p.isGolden, boosting: p.boosting || false,
+            lastProcessedInput: p.lastProcessedInput, nextTierIndex: p.nextTierIndex || 0
+          }])
+      ),
+      bots: gameState.bots.filter(b => b && b.alive).map(b => ({
+        id: b.id, name: b.name, marbleType: b.marbleType,
+        x: b.x, y: b.y, angle: b.angle, lengthScore: b.lengthScore,
+        bounty: b.bounty, alive: b.alive, isGolden: b.isGolden, boosting: b.boosting || false
+      })),
+      coins: gameState.coins.map(c => ({
+        id: c.id, x: c.x, y: c.y, vx: c.vx, vy: c.vy,
+        radius: c.radius, growthValue: c.growthValue,
+        marbleType: c.marbleType, rotation: c.rotation || 0
+      }))
     }
   });
 
@@ -1561,8 +2213,18 @@ _lastAngle: 0,
       y: player.y,
       angle: player.angle
     });
-    
-    console.log(`âœ… ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
+ 
+    player.isPaidSession = socket.isPaidSession || false;   
+console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
+
+    // ═══ VAULT KEEPER ABSORPTION ═══
+    const vaultKeeper = gameState.bots.find(b => b.isVaultKeeper && b.alive);
+    if (vaultKeeper) {
+      console.log(`🏦 VAULT KEEPER ABSORBED by ${player.name} | Bounty: $${vaultKeeper.bounty.toFixed(2)}`);
+      // Run vault transfer sequence: treat as if this player killed the vault keeper
+      killMarble(vaultKeeper, socket.id);
+    }
+
 
 // â”€â”€ $TTAW: Start payout session if authenticated â”€â”€
     if (socket.privyUserId) {
@@ -1583,15 +2245,126 @@ _lastAngle: 0,
 
   });
 
-// â”€â”€ AUTH SYNC: Upsert player to Supabase â”€â”€
+// ── DEPOSIT WATCHER: Subscribe to player wallet on auth ──
+  socket._depositSubs = { sol: null, usdc: null, lastSol: null, lastUsdc: null };
+
+  async function startDepositWatcher(walletAddress) {
+    const conn = rewards.privy.connection;
+    const { PublicKey } = require('@solana/web3.js');
+    const { getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
+    const ownerPubkey = new PublicKey(walletAddress);
+    const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+
+    // Stop any existing subs for this socket
+    stopDepositWatcher();
+
+    // Seed initial balances
+    try {
+      const lamports = await conn.getBalance(ownerPubkey);
+      socket._depositSubs.lastSol = lamports / 1e9;
+    } catch { socket._depositSubs.lastSol = 0; }
+
+    try {
+      const ata = await getAssociatedTokenAddress(USDC_MINT, ownerPubkey);
+      const account = await getAccount(conn, ata);
+      socket._depositSubs.lastUsdc = Number(account.amount) / 1e6;
+    } catch { socket._depositSubs.lastUsdc = 0; }
+
+    console.log(`👁️ Deposit watcher started: ${walletAddress.slice(0, 8)}... | SOL: ${socket._depositSubs.lastSol?.toFixed(4)} | USDC: ${socket._depositSubs.lastUsdc?.toFixed(2)}`);
+
+    // Subscribe to SOL balance changes
+    socket._depositSubs.sol = conn.onAccountChange(
+      ownerPubkey,
+      (accountInfo) => {
+        const newSol = accountInfo.lamports / 1e9;
+        const prev = socket._depositSubs.lastSol ?? 0;
+        const diff = newSol - prev;
+
+        if (diff > 0.0001) {
+          console.log(`💰 Deposit detected (${walletAddress.slice(0, 8)}...): +${diff.toFixed(4)} SOL`);
+          socket.emit('deposit-received', {
+            type: 'SOL',
+            amount: diff,
+            newBalance: newSol,
+            formatted: `${diff.toFixed(4)} SOL`
+          });
+        }
+        socket._depositSubs.lastSol = newSol;
+      },
+      'confirmed'
+    );
+
+    // Subscribe to USDC token account changes
+    try {
+      const usdcAta = await getAssociatedTokenAddress(USDC_MINT, ownerPubkey);
+      socket._depositSubs.usdc = conn.onAccountChange(
+        usdcAta,
+        (accountInfo) => {
+          try {
+            const data = accountInfo.data;
+            let rawAmount;
+            if (Buffer.isBuffer(data) || data instanceof Uint8Array) {
+              const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+              rawAmount = Number(view.getBigUint64(64, true));
+            } else { return; }
+
+            const newUsdc = rawAmount / 1e6;
+            const prev = socket._depositSubs.lastUsdc ?? 0;
+            const diff = newUsdc - prev;
+
+            if (diff > 0.001) {
+              console.log(`💵 USDC deposit detected (${walletAddress.slice(0, 8)}...): +$${diff.toFixed(2)}`);
+              socket.emit('deposit-received', {
+                type: 'USDC',
+                amount: diff,
+                newBalance: newUsdc,
+                formatted: `$${diff.toFixed(2)} USDC`
+              });
+            }
+            socket._depositSubs.lastUsdc = newUsdc;
+          } catch (parseErr) {
+            console.warn('⚠️ USDC deposit parse error:', parseErr.message);
+          }
+        },
+        'confirmed'
+      );
+    } catch {
+      console.log(`ℹ️ No USDC account yet for ${walletAddress.slice(0, 8)}... — will detect via SOL watcher`);
+    }
+  }
+
+  function stopDepositWatcher() {
+    const conn = rewards.privy.connection;
+    if (socket._depositSubs.sol !== null) {
+      try { conn.removeAccountChangeListener(socket._depositSubs.sol); } catch {}
+      socket._depositSubs.sol = null;
+    }
+    if (socket._depositSubs.usdc !== null) {
+      try { conn.removeAccountChangeListener(socket._depositSubs.usdc); } catch {}
+      socket._depositSubs.usdc = null;
+    }
+  }
   
 // â”€â”€ $TTAW: Authenticate with Privy â”€â”€
   socket.on('authenticate', async (data) => {
     if (!data || !data.privyToken) return;
     try {
-      const claims = await rewards.privy.privy.verifyAuthToken(data.privyToken);
+     const claims = await rewards.privy.verifyAuthToken(data.privyToken);
       socket.privyUserId = claims.userId;
 
+      // Start deposit watcher if player has a wallet
+      try {
+        const privyUser = await rewards.privy.privy.getUser(claims.userId);
+        const solWallet = privyUser?.linkedAccounts?.find(
+          a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'solana'
+        );
+        if (solWallet?.address) {
+          socket._walletAddress = solWallet.address;
+          startDepositWatcher(solWallet.address);
+        }
+      } catch (watchErr) {
+        console.warn(`⚠️ Could not start deposit watcher: ${watchErr.message}`);
+      }
       // Check for welcome airdrop (3 $TTAW for new Discord-linked users)
       const airdropped = await rewards.handleNewUser(claims.userId);
       if (airdropped) {
@@ -1612,21 +2385,141 @@ _lastAngle: 0,
     }
   });
 
-  // â”€â”€ $TTAW: Buy-in (paid play) â”€â”€
+ // ── USDC Buy-in (paid play) with password gate ──
   socket.on('buyIn', async (data) => {
     if (!socket.privyUserId) {
       socket.emit('buyInError', { message: 'Not authenticated' });
       return;
     }
-    try {
-      const buyInTotal = gameConstants.economy?.buyIn?.total || 1.10;
-      // Verify on-chain payment here (future: Solana TX verification)
+
+    // ═══ PASSWORD GATE (beta only — remove when going public) ═══
+    const gateEnabled = gameConstants.economy?.passwordGate?.enabled;
+    const correctPassword = process.env.PAID_PLAY_PASSWORD;
+    if (gateEnabled && correctPassword) {
+      if (!data?.password || data.password !== correctPassword) {
+        socket.emit('buyInError', { message: 'Invalid access code' });
+        console.log(`🔒 Password gate blocked: ${socket.privyUserId}`);
+        return;
+      }
+    }
+
+    // ═══ VERIFY USDC PAYMENT ON-CHAIN ═══
+    if (!data?.txSignature) {
+      socket.emit('buyInError', { message: 'No transaction signature provided' });
+      return;
+    }
+
+    // ═══ DEV BYPASS: Skip on-chain verification in test mode ═══
+    if (data.txSignature === 'DEV_BYPASS') {
+      if (process.env.DEV_BYPASS !== 'true') {
+        socket.emit('buyInError', { message: 'Dev bypass not enabled on this server' });
+        return;
+      }
+      const buyInUsdc = gameConstants.economy.buyIn.amountUsdc;
       socket.isPaidSession = true;
-      feeManager.recordBuyIn(buyInTotal);
-      socket.emit('buyInConfirmed', { amount: buyInTotal });
-      console.log(`ðŸ’µ Buy-in confirmed: ${socket.privyUserId} ($${buyInTotal})`);
+      feeManager.recordBuyIn(buyInUsdc);
+      if (auditLog) {
+        auditLog.logBuyIn(socket.privyUserId, gameState.players[socket.id]?.name || 'unknown', 'DEV_BYPASS', 0);
+      }
+      socket.emit('buyInConfirmed', { amount: buyInUsdc, txSignature: 'DEV_BYPASS' });
+      console.log(`🧪 DEV Buy-in (no USDC): ${socket.privyUserId}`);
+      return;
+    }
+
+    try {
+      const buyInUsdc = gameConstants.economy.buyIn.amountUsdc; // 1.10
+      const usdcMint = gameConstants.economy.usdcMint;
+      const USDC_DECIMALS = gameConstants.economy.usdcDecimals; // 6
+
+      // 1. Check for replay (signature already used)
+      if (gameState.usedBuyInSignatures && gameState.usedBuyInSignatures.has(data.txSignature)) {
+        socket.emit('buyInError', { message: 'Transaction already used' });
+        return;
+      }
+
+      // 2. Fetch transaction from Solana
+      const { Connection, PublicKey } = require('@solana/web3.js');
+      const connection = new Connection(process.env.SOLANA_RPC_URL, 'confirmed');
+      const tx = await connection.getParsedTransaction(data.txSignature, {
+        commitment: gameConstants.economy.security.commitment, // 'finalized'
+        maxSupportedTransactionVersion: 0
+      });
+
+      if (!tx) {
+        socket.emit('buyInError', { message: 'Transaction not found — may not be finalized yet. Try again in a few seconds.' });
+        return;
+      }
+
+      if (tx.meta.err) {
+        socket.emit('buyInError', { message: 'Transaction failed on-chain' });
+        return;
+      }
+
+      // 3. Check transaction age
+      if (tx.blockTime) {
+        const ageSecs = Math.floor(Date.now() / 1000) - tx.blockTime;
+        const maxAge = gameConstants.economy.security.maxBuyInAgeSecs; // 300
+        if (ageSecs > maxAge) {
+          socket.emit('buyInError', { message: `Transaction too old (${ageSecs}s)` });
+          return;
+        }
+      }
+
+      // 4. Verify USDC transfer amount and recipient
+      const houseAddress = await rewards.privy.getHouseAddress();
+      const preBalances = tx.meta.preTokenBalances || [];
+      const postBalances = tx.meta.postTokenBalances || [];
+
+      let houseReceived = 0;
+      for (const post of postBalances) {
+        if (post.mint !== usdcMint) continue;
+        if (post.owner !== houseAddress) continue;
+
+        const pre = preBalances.find(p => p.accountIndex === post.accountIndex);
+        const preBal = pre ? Number(pre.uiTokenAmount.amount) : 0;
+        const postBal = Number(post.uiTokenAmount.amount);
+        houseReceived += (postBal - preBal);
+      }
+
+      // Convert raw units to USDC (6 decimals)
+      const receivedUsdc = houseReceived / Math.pow(10, USDC_DECIMALS);
+
+      // Allow small tolerance for rounding (0.001 USDC)
+      if (receivedUsdc < buyInUsdc - 0.001) {
+        socket.emit('buyInError', {
+          message: `Insufficient payment: received ${receivedUsdc.toFixed(2)} USDC, need ${buyInUsdc.toFixed(2)} USDC`
+        });
+        console.log(`❌ Buy-in short: ${receivedUsdc.toFixed(4)} < ${buyInUsdc} from ${socket.privyUserId}`);
+        return;
+      }
+
+      // 5. Mark signature as used (replay protection)
+      if (!gameState.usedBuyInSignatures) gameState.usedBuyInSignatures = new Set();
+      gameState.usedBuyInSignatures.add(data.txSignature);
+
+      // 6. Confirm buy-in
+      socket.isPaidSession = true;
+      feeManager.recordBuyIn(buyInUsdc);
+
+      // Log for audit
+      if (auditLog) {
+        auditLog.logBuyIn(
+          socket.privyUserId,
+          gameState.players[socket.id]?.name || 'unknown',
+          data.txSignature,
+          houseReceived // raw USDC units
+        );
+      }
+
+      socket.emit('buyInConfirmed', { amount: buyInUsdc, txSignature: data.txSignature });
+      console.log(`💵 USDC Buy-in verified: ${socket.privyUserId} | ${receivedUsdc.toFixed(2)} USDC | TX: ${data.txSignature.slice(0, 16)}...`);
+
+      // Backup state after money event
+      stateBackup.saveNow();
+
     } catch (err) {
-      socket.emit('buyInError', { message: err.message });
+      console.error(`❌ Buy-in verification error: ${err.message}`);
+      socket.emit('buyInError', { message: 'Verification failed — please try again' });
     }
   });
 
@@ -1727,6 +2620,7 @@ if (typeof data.targetAngle !== 'number' ||
   });
 
 socket.on('disconnect', async () => {
+ stopDepositWatcher(); 
     console.log(`📌 Player disconnected: ${socket.id.substring(0, 8)}`);
     
     const player = gameState.players[socket.id];
@@ -1743,6 +2637,60 @@ socket.on('disconnect', async () => {
           totalPayout: player.totalPayout
         });
         stateBackup.saveNow();
+      }
+    }
+
+// ✅ Disconnect = death: drop peewees + transfer bounty to highest player
+    if (player && player.alive) {
+  const allAlive = [
+        ...Object.values(gameState.players).filter(p => p.alive && p.id !== socket.id),
+        ...gameState.bots.filter(b => b.alive)
+      ];
+      
+      if (allAlive.length > 0) {
+        // Credit kill to second-highest bounty player (vault transfer sequence applies)
+        const sorted = allAlive.sort((a, b) => (b.bounty || 0) - (a.bounty || 0));
+        const creditTo = sorted[0].id;
+        killMarble(player, creditTo);
+      } else if (player.isGolden && (player.bounty || 0) > 0) {
+        // ═══ VAULT KEEPER: No players left, preserve golden bounty ═══
+        const vaultKeeperBot = {
+          id: `vaultkeeper_${Date.now()}`,
+          name: '🏦 Vault Keeper',
+          x: 0,
+          y: 0,
+          angle: 0,
+          targetAngle: 0,
+          lengthScore: gameConstants.player.startLength,
+          bounty: player.bounty,
+          kills: 0,
+          alive: true,
+          boosting: false,
+          isBot: true,
+          isGolden: true,
+          isVaultKeeper: true,
+          lastUpdate: Date.now(),
+          spawnTime: Date.now(),
+          pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+          _lastValidX: 0,
+          _lastValidY: 0,
+          _lastAngle: 0,
+          _aiState: 'IDLE',
+          _steerSmooth: 0,
+          _wanderCurve: 0,
+          _personality: { aggression: 0, speed: 0 }
+        };
+        vaultKeeperBot.pathBuffer.reset(0, 0);
+        gameState.bots.push(vaultKeeperBot);
+        
+        // Vault floor carries over — already set in gameState
+        console.log(`🏦 VAULT KEEPER SPAWNED: Bounty $${player.bounty.toFixed(2)} | Vault floor: $${gameState.goldenVaultFloor}`);
+        
+        // Kill the disconnected player without crediting anyone
+        marble_alive_false_only(player);
+      } else {
+        // Non-golden player, no one to credit — just die
+        marble_alive_false_only(player);
       }
     }
 
@@ -1764,7 +2712,9 @@ socket.on('disconnect', async () => {
 
 function initializeGame() {
   console.log('ðŸŽ® Initializing game...');
-  
+  gameState.exhaustedTiers = new Set();
+  gameState.goldenVaultFloor = 0;
+
   const bounds = {
     minX: -gameConstants.arena.radius,
     minY: -gameConstants.arena.radius,
@@ -1792,16 +2742,62 @@ function initializeGame() {
 // GOLDEN MARBLE UPDATE
 // ============================================================================
 function updateGoldenMarble() {
-  const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
+  const allMarbles = [
+    ...Object.values(gameState.players),
+    ...gameState.bots
+  ].filter(m => m.alive);
   
+  // Find who WAS golden before this update
+  const previousGolden = allMarbles.find(m => m.isGolden);
+  
+  // Clear all golden status
   allMarbles.forEach(m => m.isGolden = false);
   
-  if (allMarbles.length > 0) {
-    const highest = allMarbles.reduce((prev, current) => {
-      return (current.bounty || 0) > (prev.bounty || 0) ? current : prev;
-    });
+  if (allMarbles.length === 0) return;
+  
+  // Find highest bounty
+  const highest = allMarbles.reduce((prev, cur) => {
+    return (cur.bounty || 0) > (prev.bounty || 0) ? cur : prev;
+  });
+  
+  if ((highest.bounty || 0) <= 0) return;
+  
+  highest.isGolden = true;
+  
+// ═══ GOLDEN MIB CHANGED HANDS ═══
+  if (previousGolden && previousGolden.id !== highest.id) {
+    const exhaustedCount = gameState.exhaustedTiers.size;
+    gameState.exhaustedTiers.clear();
     
-    if (highest.bounty > 0) highest.isGolden = true;
+    // Reset ALL players' tier indices so they can re-earn from tier 0
+    Object.values(gameState.players).forEach(p => { if (p.alive) p.nextTierIndex = 0; });
+   // Recalculate vault floor for new golden mib based on their passed tiers
+    const tiers = gameConstants.cashout?.tiers || [];
+    for (let i = 0; i < (highest.nextTierIndex || 0); i++) {
+      if (i < tiers.length) {
+        const floor = getVaultFloorForTier(tiers[i].threshold);
+        if (floor > gameState.goldenVaultFloor) {
+          gameState.goldenVaultFloor = floor;
+        }
+      }
+    }
+    
+    console.log(`👑 GOLDEN TRANSFER: ${previousGolden.name} → ${highest.name} | Cleared ${exhaustedCount} exhausted tiers | Vault floor KEPT at $${gameState.goldenVaultFloor}`);
+  }
+  
+// ═══ FIRST GOLDEN MIB (no previous) ═══
+  if (!previousGolden && highest.isGolden) {
+    // Recalculate vault floor based on what tiers this player has already passed
+    const tiers = gameConstants.cashout?.tiers || [];
+    for (let i = 0; i < (highest.nextTierIndex || 0); i++) {
+      if (i < tiers.length) {
+        const floor = getVaultFloorForTier(tiers[i].threshold);
+        if (floor > gameState.goldenVaultFloor) {
+          gameState.goldenVaultFloor = floor;
+        }
+      }
+    }
+    console.log(`👑 FIRST GOLDEN MIB: ${highest.name} | Bounty: $${(highest.bounty || 0).toFixed(2)} | Vault floor: $${gameState.goldenVaultFloor}`);
   }
 }
 
@@ -2120,13 +3116,15 @@ const cleanCoins = gameState.coins.map(c => ({
 rotation: c.rotation || 0
   }));
   
-  io.emit('gameState', {
-serverDeltaMs: 1000 / TICK_RATE,
-    players: cleanPlayers,
-    bots: cleanBots,
-    coins: cleanCoins,
-    timestamp: now
-  });
+io.emit('gameState', {
+  serverDeltaMs: delta,
+  players: cleanPlayers,
+  bots: cleanBots,
+  coins: cleanCoins,
+  timestamp: now,
+  goldenVaultFloor: gameState.goldenVaultFloor,
+  exhaustedTierCount: gameState.exhaustedTiers.size
+});
   
 
 }, 1000 / TICK_RATE);
@@ -2170,12 +3168,13 @@ setInterval(() => {
 
   const top5 = allEntities.slice(0, 5);
 
-  io.emit('yard-update', {
+io.emit('yard-update', {
     playing: totalPlaying,
     queue: 0,
     max: 40,
     totalWon: 0,
-    leaderboard: top5
+    leaderboard: top5,
+    vaultFloor: gameState.goldenVaultFloor || 0
   });
 }, 3000);
 

@@ -8,13 +8,23 @@
     "dev": "nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["game", "multiplayer", "marbles", "physics"],
+  "keywords": [
+    "game",
+    "multiplayer",
+    "marbles",
+    "physics"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@privy-io/node": "^0.9.0",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
+    "@supabase/supabase-js": "^2.95.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
     "socket.io": "^4.6.1"
   },
   "devDependencies": {
