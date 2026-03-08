@@ -43,6 +43,11 @@ const StateBackup = require('./stateBackup');
 
 const auditLog = new AuditLog(null, gameConstants);
 const stateBackup = new StateBackup(payouts, feeManager, spendVerifier, null, gameConstants);
+// ── Goldn Yard Time Engine (requires io, wired after server.listen) ──
+const GoldenHourManager = require('./goldenHourManager');
+const QueueManager = require('./queueManager');
+let goldenHourManager = null; // initialized after io is ready
+let queueManager = null;      // initialized after io is ready
 
 stateBackup.restore().then(() => {
     // ═══ FIX: Restore vault state as proper types (JSON kills Sets) ═══
@@ -55,12 +60,97 @@ stateBackup.restore().then(() => {
   });
 
 const killedThisFrame = new Set(); // âœ… FIX: Track kills to prevent double-kill crash
+const dequeuedPlayers = new Map();   // privyUserId → queue entry (for recognizing paid players on reconnect)
+const queueGraceTimers = new Map();  // privyUserId → setTimeout handle (grace period before removing disconnected queued player)
+
+// ═══ SHARED: Verify a USDC buy-in transaction on-chain ═══
+// Used by both direct buyIn and joinQueue handlers
+async function verifyBuyInTransaction(txSignature, expectedSenderWallet) {
+  const buyInUsdc = gameConstants.economy.buyIn.amountUsdc; // 1.10
+  const usdcMint = gameConstants.economy.usdcMint;
+  const USDC_DECIMALS = gameConstants.economy.usdcDecimals; // 6
+  const houseAddress = process.env.HOUSE_WALLET_ADDRESS || 'G4RNPSmh828JcqqZvJMGM3jaGmcg1apqkjF4oLyczA81';
+
+  // 1. Replay check
+  if (gameState.usedBuyInSignatures && gameState.usedBuyInSignatures.has(txSignature)) {
+    return { success: false, error: 'Transaction already used' };
+  }
+
+  // 2. Fetch tx with retries
+  let txInfo = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    txInfo = await rewards.privy.connection.getParsedTransaction(txSignature, {
+      commitment: gameConstants.economy?.security?.commitment || 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    });
+    if (txInfo) break;
+    console.log(`⏳ TX not found yet, retry ${attempt + 1}/5...`);
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  if (!txInfo || txInfo.meta?.err) {
+    return { success: false, error: 'Transaction not found or failed' };
+  }
+
+  // 3. Check tx age (max 5 minutes)
+  const txAge = Date.now() / 1000 - (txInfo.blockTime || 0);
+  const maxAgeSecs = gameConstants.economy?.security?.maxTxAgeSecs || 300;
+  if (txAge > maxAgeSecs) {
+    return { success: false, error: `Transaction too old (${Math.floor(txAge)}s > ${maxAgeSecs}s limit)` };
+  }
+
+  // 4. Find USDC transfer instruction — verify mint, amount, recipient
+  const preBalances = txInfo.meta.preTokenBalances || [];
+  const postBalances = txInfo.meta.postTokenBalances || [];
+
+  let houseReceived = 0;
+  let senderAddress = null;
+
+  for (const post of postBalances) {
+    if (post.mint !== usdcMint) continue;
+    const pre = preBalances.find(p => p.accountIndex === post.accountIndex && p.mint === usdcMint);
+    const preBal = pre ? parseInt(pre.uiTokenAmount.amount) : 0;
+    const postBal = parseInt(post.uiTokenAmount.amount);
+    const diff = postBal - preBal;
+
+    if (diff > 0 && post.owner === houseAddress) {
+      houseReceived = diff;
+    }
+    if (diff < 0) {
+      senderAddress = post.owner;
+    }
+  }
+
+  const expectedRaw = Math.floor(buyInUsdc * Math.pow(10, USDC_DECIMALS));
+  const tolerance = Math.floor(expectedRaw * 0.02); // 2% tolerance
+  if (houseReceived < expectedRaw - tolerance) {
+    const receivedUsdc = houseReceived / Math.pow(10, USDC_DECIMALS);
+    return { success: false, error: `House received $${receivedUsdc.toFixed(2)} but expected $${buyInUsdc}` };
+  }
+
+  // 5. Verify sender matches authenticated wallet (if provided)
+  if (expectedSenderWallet && senderAddress && senderAddress !== expectedSenderWallet) {
+    console.warn(`⚠️ TX sender mismatch: expected ${expectedSenderWallet.slice(0,8)}..., got ${senderAddress.slice(0,8)}...`);
+    return { success: false, error: 'Transaction sender does not match your wallet' };
+  }
+
+  // 6. Mark signature as used
+  if (!gameState.usedBuyInSignatures) gameState.usedBuyInSignatures = new Set();
+  gameState.usedBuyInSignatures.add(txSignature);
+
+  const receivedUsdc = houseReceived / Math.pow(10, USDC_DECIMALS);
+  return { success: true, houseReceived, receivedUsdc, senderAddress };
+}
+
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 const PORT = process.env.PORT || 3001;
-const TICK_RATE = 1000 / 60; // âœ… 60 TPS (Slither.io standard)
-const MAX_BOTS = gameConstants.bot?.count ?? 0;
+const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
+const SERVER_MODE = process.env.SERVER_MODE || 'free'; // 'paid' or 'free'
+const IS_PAID_SERVER = SERVER_MODE === 'paid';
+const MAX_BOTS = IS_PAID_SERVER ? 0 : (gameConstants.bot?.count ?? 0);
 const MAX_COINS = 300;
 const PLAYER_TIMEOUT = 15000;
 
@@ -71,26 +161,31 @@ const BOT_NAMES = [
   'TurboMarble', 'SpeedyOrb', 'RollingThunder', 'CircleChamp', 'GlassGiant'
 ];
 
-// âœ… Bot-only marble types (catseye marbles)
-const BOT_MARBLE_TYPES = [
-  'CATSEYEBLUEYELLOW',
-  'CATSEYEGREENBLUE',
-  'CATSEYEGREENORANGE'
-];
+// ✅ Peewee types — catseye only. Ground ambient spawns + bots. NOT player boulders.
+const PEEWEE_TYPES = Object.values(gameConstants.pickupThemes || {})
+  .filter(theme => theme.isPeewee === true)
+  .map(theme => theme.key);
 
-// âœ… All marble types for players
+if (PEEWEE_TYPES.length === 0) {
+  PEEWEE_TYPES.push('CATSEYEBLUEYELLOW', 'CATSEYEGREENBLUE', 'CATSEYEGREENORANGE');
+}
+
+// ✅ Bots use peewee types
+const BOT_MARBLE_TYPES = PEEWEE_TYPES;
+
+// ✅ All boulder (player shooter) marble types
 const MARBLE_TYPES = Object.values(gameConstants.pickupThemes || {})
-  .filter(theme => theme.isShooter)
+  .filter(theme => theme.isBoulder)
   .map(theme => theme.key);
 
 // Fallback if no themes defined
 if (MARBLE_TYPES.length === 0) {
-  MARBLE_TYPES.push('GALAXY1', 'FRANCE1', 'USA1', 'AUSSIEFLAG');
+  MARBLE_TYPES.push('GALAXY1', 'FRANCE1', 'USA', 'GREENGOBLIN');
 }
 
-// ✅ Smallie types — only marbles that can spawn as ground pickups
+// ✅ Smallie types — boulder marbles that can also appear as death-drop smallies
 const SMALLIE_TYPES = Object.values(gameConstants.pickupThemes || {})
-  .filter(theme => theme.isShooter && theme.isSmallie !== false)
+  .filter(theme => theme.isBoulder && theme.isSmallie !== false)
   .map(theme => theme.key);
 
 if (SMALLIE_TYPES.length === 0) {
@@ -98,7 +193,7 @@ if (SMALLIE_TYPES.length === 0) {
 }
 
 console.log(`✅ Marble types: ${MARBLE_TYPES.length} shooters | ${SMALLIE_TYPES.length} smallies`);
-
+const respawnReservations = new Map();
 
 // ============================================================================
 // GAME STATE
@@ -350,7 +445,7 @@ class SpatialGrid {
 // RATE LIMITING (from Doc 15)
 // ============================================================================
 const rateLimits = new Map();
-const RATE_LIMIT_MS = 10;
+const RATE_LIMIT_MS = 100;
 
 function checkRateLimit(socketId, action) {
   const key = `${socketId}:${action}`;
@@ -422,14 +517,19 @@ function marble_alive_false_only(marble) {
     const distance = 20 + Math.random() * 40;
     const explodeSpeed = 100 + Math.random() * 80;
     
+const sm = 0.5 + Math.random() * 0.5;
+    const baseRadius = gameConstants.peewee?.radius || 20;
+    const baseGrowth = (dropDist.totalValue / Math.max(1, dropDist.numDrops));
     gameState.coins.push({
       id: `coin_${Date.now()}_${Math.random()}_${i}`,
       x: spawnX + Math.cos(angle) * distance,
       y: spawnY + Math.sin(angle) * distance,
       vx: Math.cos(angle) * explodeSpeed,
       vy: Math.sin(angle) * explodeSpeed,
-      growthValue: Math.floor(dropDist.valuePerDrop) || 5,
-      radius: gameConstants.peewee?.radius || 50,
+      growthValue: Math.max(1, Math.floor(baseGrowth * sm)),
+      radius: baseRadius * sm,
+sizeMultiplier: sm,
+      isDropped: true,
       mass: gameConstants.peewee?.mass || 2.0,
       friction: gameConstants.peewee?.friction || 0.92,
       marbleType: marble.marbleType || 'GALAXY1',
@@ -452,8 +552,15 @@ function calculateDropDistribution(totalValue, C, lengthScore) {
   const dropsPerSeg = C.deathDrop?.dropsPerSegment || 1;
   const maxDrops = C.deathDrop?.maxDrops || 30;
   const numDrops = Math.min(numSegments * dropsPerSeg, maxDrops);
-  const valuePerDrop = totalValue / Math.max(1, numDrops);
-  return { numDrops, valuePerDrop, numSegments, dropsPerSeg };
+
+  // ✅ Randomised sizeMultipliers (0.5–1.0) per drop, normalised so total value is preserved
+  const rawWeights = Array.from({ length: numDrops }, () => 0.5 + Math.random() * 0.5);
+  const weightSum = rawWeights.reduce((a, b) => a + b, 0);
+  const sizeMultipliers = rawWeights.map(w => w / weightSum * numDrops); // normalised around 1.0 mean
+  // Clamp each back to 0.6–1.5 range and derive value proportionally
+  const clampedMultipliers = sizeMultipliers.map(m => Math.max(0.6, Math.min(1.5, m)));
+
+  return { numDrops, totalValue, clampedMultipliers, numSegments, dropsPerSeg };
 }
 function findSafeSpawn(minDistance, arenaRadius) {
   const allMarbles = [...Object.values(gameState.players), ...gameState.bots];
@@ -1141,8 +1248,8 @@ function spawnCoin() {
   
 if (gameState.coins.length >= 100) {
     if (!this._lastMaxCoinsLog || Date.now() - this._lastMaxCoinsLog > 5000) {
-      console.log(`⚠️ MAX COINS (100) reached, no spawning until some are eaten`);
-      this._lastMaxCoinsLog = Date.now();
+      //console.log(`⚠️ MAX COINS (100) reached, no spawning until some are eaten`);
+      //this._lastMaxCoinsLog = Date.now();
     }
     return;
   }
@@ -1166,7 +1273,7 @@ if (gameState.coins.length >= 100) {
     mass: gameConstants.peewee?.mass || 2.0,
     growthValue: gameConstants.peewee?.growthValue || 20,
     friction: gameConstants.peewee?.friction || 0.92,
-marbleType: SMALLIE_TYPES[Math.floor(Math.random() * SMALLIE_TYPES.length)],
+marbleType: PEEWEE_TYPES[Math.floor(Math.random() * PEEWEE_TYPES.length)],
     isDropped: false,
     sizeMultiplier: 1.0,
     spawnTime: Date.now()
@@ -1176,7 +1283,7 @@ marbleType: SMALLIE_TYPES[Math.floor(Math.random() * SMALLIE_TYPES.length)],
   
   // âœ… FIX: Log every 10 spawns
   if (gameState.coins.length % 10 === 0) {
-    console.log(`ðŸŽ¯ Spawned coin! Total: ${gameState.coins.length}/100`);
+  //  console.log(`ðŸŽ¯ Spawned coin! Total: ${gameState.coins.length}/100`);
   }
 }
 
@@ -1453,6 +1560,33 @@ app.post('/api/rpc-proxy', async (req, res) => {
     'isBlockhashValid',
   ];
 
+// ═══ RATE LIMITING: 120 requests per minute per IP ═══
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
+  const rpcRateKey = `rpc:${clientIp}`;
+  const now = Date.now();
+  if (!global._rpcRateLimits) global._rpcRateLimits = new Map();
+  const rpcRL = global._rpcRateLimits;
+  const window60s = 60000;
+  const maxPerWindow = 120;
+  
+  let bucket = rpcRL.get(rpcRateKey);
+  if (!bucket || now - bucket.windowStart > window60s) {
+    bucket = { windowStart: now, count: 0 };
+    rpcRL.set(rpcRateKey, bucket);
+  }
+  bucket.count++;
+  if (bucket.count > maxPerWindow) {
+    console.warn(`⚠️ RPC rate limit hit: ${clientIp} (${bucket.count}/${maxPerWindow})`);
+    return res.status(429).json({ error: 'Rate limit exceeded. Try again in 60 seconds.' });
+  }
+
+  // ═══ CLEANUP stale entries every 1000 requests ═══
+  if (rpcRL.size > 1000) {
+    for (const [key, val] of rpcRL) {
+      if (now - val.windowStart > window60s * 2) rpcRL.delete(key);
+    }
+  }
+
   const body = req.body;
   if (!body || !body.method) {
     return res.status(400).json({ error: 'Invalid RPC request' });
@@ -1572,7 +1706,7 @@ app.get('/api/player-profile', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('players')
-      .select('total_kills, total_earned, games_played, turbo_taw_tokens, highest_bounty, wallet_address')
+    .select('total_kills, total_earned, games_played, turbo_taw_tokens, highest_bounty, wallet_address, paid_kills, paid_earned, paid_games_played, paid_highest_bounty, free_highest_bounty')
       .eq('privy_id', privyId)
       .single();
 
@@ -1580,19 +1714,152 @@ app.get('/api/player-profile', async (req, res) => {
       return res.json({ totalKills: 0, totalWon: 0, gamesPlayed: 0, turboTawTokens: 0, highestBounty: 0 });
     }
 
-    res.json({
+ res.json({
       totalKills: data.total_kills || 0,
       totalWon: data.total_earned || 0,
       gamesPlayed: data.games_played || 0,
       turboTawTokens: data.turbo_taw_tokens || 0,
       highestBounty: data.highest_bounty || 0,
-      walletAddress: data.wallet_address || null
+      walletAddress: data.wallet_address || null,
+      paidKills: data.paid_kills || 0,
+      paidWon: data.paid_earned || 0,
+      paidGames: data.paid_games_played || 0,
+      paidHighestBounty: data.paid_highest_bounty || 0,
+      freeKills: (data.total_kills || 0) - (data.paid_kills || 0),
+      freeWon: (data.total_earned || 0) - (data.paid_earned || 0),
+      freeGames: (data.games_played || 0) - (data.paid_games_played || 0),
+      freeHighestBounty: data.free_highest_bounty || 0,
     });
   } catch (err) {
     console.error('[API] player-profile error:', err.message);
     res.status(500).json({ error: 'Internal error' });
   }
 });
+
+// ── Pocketed Mibs: Get player's active pocketed mibs with decay ──
+app.get('/api/pocketed-mibs', async (req, res) => {
+  const privyId = req.query.privyId;
+  if (!privyId) return res.status(400).json({ error: 'Missing privyId' });
+
+  try {
+    const { data: mibs, error } = await supabase
+      .from('pocketed_mibs')
+      .select('*')
+      .eq('privy_id', privyId)
+      .eq('status', 'active')
+      .order('pocketed_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const pocketConfig = gameConstants.pocketing || {};
+    const freeNights = pocketConfig.freeNights || 3;
+    const decayRate = pocketConfig.decayRatePerNight || 0.10;
+    const minBounty = pocketConfig.minBountyBeforeCleanup || 0.01;
+    const now = new Date();
+
+    const result = (mibs || []).map(mib => {
+      const daysSince = (now - new Date(mib.pocketed_at)) / (1000 * 60 * 60 * 24);
+      const decayDays = Math.max(0, daysSince - freeNights);
+      const currentBounty = decayDays > 0
+        ? parseFloat((mib.bounty * Math.pow(1 - decayRate, decayDays)).toFixed(2))
+        : mib.bounty;
+      const freeNightsLeft = Math.max(0, Math.ceil(freeNights - daysSince));
+
+      return {
+        id: mib.id,
+        name: mib.name,
+        originalBounty: mib.bounty,
+        currentBounty: currentBounty < minBounty ? 0 : currentBounty,
+        kills: mib.kills,
+        marbleType: mib.marble_type,
+        lengthScore: mib.length_score,
+        serverId: mib.server_id,
+        isPaid: mib.is_paid,
+        pocketedAt: mib.pocketed_at,
+        daysSincePocketed: parseFloat(daysSince.toFixed(1)),
+        freeNightsLeft: freeNightsLeft,
+        decayDays: parseFloat(decayDays.toFixed(1)),
+        isExpired: currentBounty < minBounty,
+      };
+    });
+
+    res.json({ mibs: result });
+  } catch (err) {
+    console.error('[API] pocketed-mibs error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ── Claim Pocketed Mib: Re-enter with pocketed bounty ──
+app.post('/api/claim-pocketed-mib', express.json(), async (req, res) => {
+  const { privyId, mibId } = req.body;
+  if (!privyId || !mibId) return res.status(400).json({ error: 'Missing privyId or mibId' });
+
+  try {
+    const { data: mib, error } = await supabase
+      .from('pocketed_mibs')
+      .select('*')
+      .eq('id', mibId)
+      .eq('privy_id', privyId)
+      .eq('status', 'active')
+      .single();
+
+    if (error || !mib) return res.json({ error: 'Pocketed mib not found or already claimed' });
+
+    // Calculate decayed bounty
+    const pocketConfig = gameConstants.pocketing || {};
+    const freeNights = pocketConfig.freeNights || 3;
+    const decayRate = pocketConfig.decayRatePerNight || 0.10;
+    const minBounty = pocketConfig.minBountyBeforeCleanup || 0.01;
+    const now = new Date();
+    const daysSince = (now - new Date(mib.pocketed_at)) / (1000 * 60 * 60 * 24);
+    const decayDays = Math.max(0, daysSince - freeNights);
+    const currentBounty = decayDays > 0
+      ? parseFloat((mib.bounty * Math.pow(1 - decayRate, decayDays)).toFixed(2))
+      : mib.bounty;
+
+    if (currentBounty < minBounty) {
+      // Already decayed to nothing — forfeit it
+      await supabase
+        .from('pocketed_mibs')
+        .update({ status: 'forfeited', forfeited_at: now.toISOString(), decay_forfeited: mib.bounty })
+        .eq('id', mibId);
+
+      return res.json({ error: 'Mib has fully decayed and been forfeited' });
+    }
+
+    // Mark as claimed
+    await supabase
+      .from('pocketed_mibs')
+      .update({ status: 'claimed', claimed_at: now.toISOString(), decay_forfeited: parseFloat((mib.bounty - currentBounty).toFixed(2)) })
+      .eq('id', mibId);
+
+    // Recycle decayed amount to prize pool
+    const decayedAmount = parseFloat((mib.bounty - currentBounty).toFixed(2));
+    if (decayedAmount > 0) {
+      await supabase
+        .from('decay_pool')
+        .insert({ server_id: mib.server_id, amount: decayedAmount, source: 'claim_decay' });
+    }
+
+    console.log(`🎱 CLAIMED: ${mib.name} | Original: $${mib.bounty} | Decayed: $${currentBounty} | Lost: $${decayedAmount}`);
+
+    res.json({
+      success: true,
+      bounty: currentBounty,
+      kills: mib.kills,
+      nextTierIndex: mib.next_tier_index,
+      totalPayout: parseFloat(mib.total_payout),
+      marbleType: mib.marble_type,
+      lengthScore: mib.length_score,
+    });
+  } catch (err) {
+    console.error('[API] claim-pocketed-mib error:', err.message);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+
 
 app.get('/api/wallet-balance', async (req, res) => {
   const address = req.query.address;
@@ -1827,7 +2094,52 @@ function checkCashoutTiers(player) {
   return cashoutsThisCheck;
 }
 
-function killMarble(marble, killerId) {
+
+// ============================================================================
+// LAST PLAYER REFUND — $1.00 buy-in returned if no kills, no payouts, last alive
+// ============================================================================
+function tryLastPlayerRefund(player) {
+  if (!player || !player._isPaidSession) return false;
+  if ((player.kills || 0) > 0) return false;
+  
+  const session = payouts.getSessionState(player.privyId);
+  if (!session || session.totalAccrued > 0) return false;
+  
+  const humanPlayers = Object.values(gameState.players).filter(p => p.alive && p.id !== player.id);
+  const aliveBots = gameState.bots.filter(b => b.alive && !b.isVaultKeeper);
+  if (humanPlayers.length > 0 || aliveBots.length > 0) return false;
+  
+  // All conditions met — refund
+  const refundAmount = 1.00;
+  payouts.accrueReward(player.privyId, refundAmount, 'Last player refund', {
+    type: 'last_player_refund'
+  });
+  console.log(`💸 LAST PLAYER REFUND: $${refundAmount.toFixed(2)} → ${player.name} (0 kills, 0 payouts, last alive)`);
+  
+// Clean exit — no death drops, no vault keeper
+  player.alive = false;
+  player.nextTierIndex = 0;
+  player._refundProcessed = true; // Flag so disconnect handler skips duplicate processing
+  
+  io.to(player.id).emit('playerDeath', {
+    playerId: player.id,
+    killerId: null,
+    killerName: 'Refund',
+    deathType: 'refund',
+    bountyLost: 0,
+    x: player.x,
+    y: player.y,
+    marbleType: player.marbleType,
+    timestamp: Date.now()
+  });
+  
+  io.emit('playerLeft', { playerId: player.id });
+  delete gameState.players[player.id];
+  stateBackup.saveNow();
+  return true;
+}
+
+function killMarble(marble, killerId, overrideDeathType) {
   if (!marble || !marble.alive) return;
   
   // âœ… FIX: Prevent double-kill in same frame
@@ -1839,12 +2151,17 @@ function killMarble(marble, killerId) {
   // ═══ RESET TIER INDEX ON DEATH — player can re-earn all tiers next life ═══
   marble.nextTierIndex = 0;
 
-  marble.alive = false;
+marble.alive = false;
   
-  const dropInfo = calculateBountyDrop(marble, gameConstants);
+  // ✅ Vault Keeper: skip peewee drops when absorbed by joining player
+const dropInfo = calculateBountyDrop(marble, gameConstants);
+
+  if (marble.isVaultKeeper) {
+    console.log(`🏦 VAULT KEEPER ABSORBED: ${marble.name} | Bounty: $${(marble.bounty || 0).toFixed(2)} | No peewee drop`);
+  } else {
 const dropDist = calculateDropDistribution(dropInfo.totalValue, gameConstants, marble.lengthScore);  
 const coinsToSpawn = Math.min(dropDist.numDrops, MAX_COINS - gameState.coins.length);
-  console.log(`ðŸ’€ DEATH DROP: ${marble.name} | lengthScore=${marble.lengthScore} | totalValue=${dropInfo.totalValue} | spawning ${coinsToSpawn} peewees`);
+ console.log(`💀 DEATH DROP: ${marble.name} | lengthScore=${marble.lengthScore} | totalValue=${dropInfo.totalValue} | spawning ${coinsToSpawn} peewees`);
 
 for (let i = 0; i < coinsToSpawn; i++) {
     // Distribute along the body, not just at head
@@ -1866,14 +2183,20 @@ for (let i = 0; i < coinsToSpawn; i++) {
     const distance = 20 + Math.random() * 40;
     const explodeSpeed = 100 + Math.random() * 80;
     
+   const sm = dropDist.clampedMultipliers ? (dropDist.clampedMultipliers[i] ?? 1.0) : 1.0;
+    const baseRadius = gameConstants.peewee?.radius || 20;
+    const baseGrowth = (dropDist.totalValue / Math.max(1, dropDist.numDrops));
+
+    
     gameState.coins.push({
       id: `coin_${Date.now()}_${Math.random()}_${i}`,
       x: spawnX + Math.cos(angle) * distance,
       y: spawnY + Math.sin(angle) * distance,
       vx: Math.cos(angle) * explodeSpeed,
       vy: Math.sin(angle) * explodeSpeed,
-      growthValue: Math.floor(dropDist.valuePerDrop) || 5,
-      radius: gameConstants.peewee?.radius || 50,
+      growthValue: Math.max(1, Math.floor(baseGrowth * sm)),
+      radius: baseRadius * sm,
+      sizeMultiplier: sm,
       mass: gameConstants.peewee?.mass || 2.0,
       friction: gameConstants.peewee?.friction || 0.92,
       marbleType: marble.isGolden ? 'GOLDEN' : (marble.marbleType || 'GALAXY1'),
@@ -1881,6 +2204,7 @@ for (let i = 0; i < coinsToSpawn; i++) {
       spawnTime: Date.now()
     });
   }
+   }
   
   // Get killer info
   let killer = null;
@@ -1891,9 +2215,9 @@ for (let i = 0; i < coinsToSpawn; i++) {
     killer = gameState.players[killerId];
      if (!killer) killer = gameState.bots.find(b => b.id === killerId);
     
-    if (killer) {
+   if (killer) {
       killerName = killer.name || 'Unknown';
-      deathType = 'player';
+      deathType = overrideDeathType || 'player';
   
       
  if (killer.alive) {
@@ -1950,38 +2274,64 @@ for (let i = 0; i < coinsToSpawn; i++) {
         // ═══════════════════════════════════════════════════════
         // CASE 2: KILLER IS GOLDEN MIB → 20% wallet, 80% bounty
         // ═══════════════════════════════════════════════════════
-        } else if (killer.isGolden && victimBounty > 0) {
-          const goldenPayout = victimBounty * (vaultConfig?.instantCashRate || 0.20);
-          const bountyAdded = victimBounty - goldenPayout;
-          
-          killer.bounty = (killer.bounty || 0) + bountyAdded;
-          
-          console.log(`🥇 GOLDEN KILL: ${killer.name} | Absorbed $${victimBounty.toFixed(2)} | 20%: $${goldenPayout.toFixed(2)} to wallet | 80%: $${bountyAdded.toFixed(2)} to bounty`);
-          
-          if (!killer.isBot) {
-            // Golden instant payout to wallet
-            killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
-            stateBackup.saveNow();
-            io.to(killer.id).emit('cashout', {
-              tiers: [{ amount: goldenPayout, isGolden: true }],
-              total: killer.totalPayout,
-              isGolden: true,
-              bountyGained: victimBounty
-            });
-            
-            // Check tier cashouts on the bounty portion
-            const cashouts = checkCashoutTiers(killer);
-            if (cashouts && cashouts.length > 0) {
-              console.log(`💰 GOLDEN TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty: $${killer.bounty.toFixed(2)}`);
-              io.to(killer.id).emit('cashout', {
-                tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
-                total: killer.totalPayout,
-                bountyGained: bountyAdded
-              });
+      } else if (killer.isGolden && victimBounty > 0) {
+          const isNonCombat = (overrideDeathType === 'wall' || overrideDeathType === 'disconnect');
+
+          if (isNonCombat) {
+            // ═══ WALL/DISCONNECT: 100% to bounty, NO 20% instant cash ═══
+            killer.bounty = (killer.bounty || 0) + victimBounty;
+            console.log(`🧱 ${overrideDeathType.toUpperCase()}→GOLDEN: ${killer.name} | +$${victimBounty.toFixed(2)} to bounty (no 20% cash) | New bounty: $${killer.bounty.toFixed(2)}`);
+
+            if (!killer.isBot) {
+              const cashouts = checkCashoutTiers(killer);
+              if (cashouts && cashouts.length > 0) {
+                console.log(`💰 ${overrideDeathType.toUpperCase()} TIERS: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty: $${killer.bounty.toFixed(2)}`);
+                io.to(killer.id).emit('cashout', {
+                  tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                  total: killer.totalPayout,
+                  bountyGained: victimBounty
+                });
+              }
             }
+            bountyGainedForNotification = victimBounty;
+
+          } else {
+            // ═══ COMBAT KILL: 20% instant cash, 80% to bounty ═══
+            const goldenPayout = victimBounty * (vaultConfig?.instantCashRate || 0.20);
+            const bountyAdded = victimBounty - goldenPayout;
+
+            killer.bounty = (killer.bounty || 0) + bountyAdded;
+
+            console.log(`🥇 GOLDEN KILL: ${killer.name} | Absorbed $${victimBounty.toFixed(2)} | 20%: $${goldenPayout.toFixed(2)} to wallet | 80%: $${bountyAdded.toFixed(2)} to bounty`);
+
+            if (!killer.isBot) {
+              killer.totalPayout = (killer.totalPayout || 0) + goldenPayout;
+              stateBackup.saveNow();
+
+              const killerSocket = io.sockets.sockets.get(killer.id);
+              if (killerSocket?.privyUserId) {
+                payouts.accrueGoldenBonus(killerSocket.privyUserId, goldenPayout);
+              }
+
+              io.to(killer.id).emit('cashout', {
+                tiers: [{ amount: goldenPayout, isGolden: true }],
+                total: killer.totalPayout,
+                isGolden: true,
+                bountyGained: victimBounty
+              });
+
+              const cashouts = checkCashoutTiers(killer);
+              if (cashouts && cashouts.length > 0) {
+                console.log(`💰 GOLDEN TIER CASHOUT: ${killer.name} | tiers=${cashouts.map(c => '$' + c.amount).join(', ')} | bounty: $${killer.bounty.toFixed(2)}`);
+                io.to(killer.id).emit('cashout', {
+                  tiers: cashouts.map(c => ({ amount: c.amount, isGolden: false, isJackpot: c.isJackpot || false })),
+                  total: killer.totalPayout,
+                  bountyGained: bountyAdded
+                });
+              }
+            }
+            bountyGainedForNotification = bountyAdded;
           }
-          
-          bountyGainedForNotification = bountyAdded;
 
         // ═══════════════════════════════════════════════════════
         // CASE 3: REGULAR PVP → 10% tax to Golden Mib
@@ -2035,12 +2385,17 @@ for (let i = 0; i < coinsToSpawn; i++) {
           bountyGainedForNotification = bountyToKiller;
         }
         
-        // ═══════════════════════════════════════════════════════
-        // KILL NOTIFICATION + $TTAW (all cases)
+     // ═══════════════════════════════════════════════════════
+        // KILL NOTIFICATION + $TTAW + YARD TIME (all cases)
         // ═══════════════════════════════════════════════════════
         if (!killer.isBot && killer.alive) {
           if (socket_killer_privyId) {
             rewards.handleKill(socket_killer_privyId);
+            // Track kill for Goldn Yard Time prize (paid sessions only)
+            const killerSocket = io.sockets.sockets.get(killer.id);
+            if (killerSocket?.isPaidSession) {
+              feeManager.recordKill(socket_killer_privyId);
+            }
           }
           
           io.to(killer.id).emit('playerKill', {
@@ -2069,7 +2424,7 @@ for (let i = 0; i < coinsToSpawn; i++) {
       }, 3000);
     }
 } else {
-  // âœ… EMIT death event to victim
+// ✅ EMIT death event to victim
   io.to(marble.id).emit('playerDeath', {
     playerId: marble.id,
     killerId: killerId,
@@ -2082,6 +2437,16 @@ for (let i = 0; i < coinsToSpawn; i++) {
     timestamp: Date.now()
   });
 
+  // ── Ghost slot: paid human deaths hold their arena slot for 50s (Play Again window) ──
+  if (IS_PAID_SERVER && marble.privyId && marble._isPaidSession) {
+    respawnReservations.set(marble.privyId, {
+      deadline: Date.now() + 50000,
+      playerName: marble.name,
+      ghostSocketId: marble.id,
+    });
+    console.log(`👻 Ghost slot reserved: ${marble.name} | 50s window | privyId: ${marble.privyId}`);
+  }
+
   // âœ… Save stats to Supabase ON DEATH (before player data is lost)
   const deathPrivyId = marble.privyId;
   if (deathPrivyId) {
@@ -2089,7 +2454,7 @@ for (let i = 0; i < coinsToSpawn; i++) {
     const sessionEarned = marble.totalPayout || 0;
     supabase
       .from('players')
-      .select('total_kills, total_earned, games_played, highest_bounty')
+     .select('total_kills, total_earned, games_played, highest_bounty, paid_kills, paid_earned, paid_highest_bounty, free_highest_bounty')
       .eq('privy_id', deathPrivyId)
       .single()
       .then(({ data: existing }) => {
@@ -2100,9 +2465,13 @@ for (let i = 0; i < coinsToSpawn; i++) {
             .update({
               total_kills: (existing.total_kills || 0) + sessionKills,
               total_earned: (existing.total_earned || 0) + sessionEarned,
-             games_played: (existing.games_played || 0) + 1,
-              paid_games_played: (existing.paid_games_played || 0) + (marble.isPaidSession ? 1 : 0),
+              games_played: (existing.games_played || 0) + 1,
+              paid_games_played: (existing.paid_games_played || 0) + (marble._isPaidSession ? 1 : 0),
               highest_bounty: newHighest,
+              paid_kills: (existing.paid_kills || 0) + (marble._isPaidSession ? sessionKills : 0),
+              paid_earned: (existing.paid_earned || 0) + (marble._isPaidSession ? sessionEarned : 0),
+              paid_highest_bounty: marble._isPaidSession ? Math.max(existing.paid_highest_bounty || 0, marble.bounty || 0) : (existing.paid_highest_bounty || 0),
+              free_highest_bounty: !marble._isPaidSession ? Math.max(existing.free_highest_bounty || 0, marble.bounty || 0) : (existing.free_highest_bounty || 0),
             })
             .eq('privy_id', deathPrivyId)
             .then(({ error }) => {
@@ -2117,8 +2486,48 @@ for (let i = 0; i < coinsToSpawn; i++) {
       .catch(err => console.error('[Supabase] Stats save error:', err.message));
   }
 
-  // âœ… FIX: DELETE IMMEDIATELY - no setImmediate delay!
+// ✅ End payout session + cleanup survival interval on combat death
+  if (IS_PAID_SERVER) {
+    const deathSocket = io.sockets.sockets.get(marble.id);
+    if (deathSocket) {
+      if (deathSocket._survivalInterval) clearInterval(deathSocket._survivalInterval);
+      if (deathSocket.privyUserId) {
+        payouts.endSession(deathSocket.privyUserId, 'killed');
+        rewards.handleDeath(deathSocket.privyUserId);
+      }
+    }
+  }
+
+  // ✅ FIX: DELETE IMMEDIATELY - no setImmediate delay!
   delete gameState.players[marble.id];
+
+  // ═══ VAULT KEEPER: If golden marble died with no killer and nobody left ═══
+  if (!killerId && marble.isGolden && (marble.bounty || 0) > 0) {
+    const anyoneLeft = [
+      ...Object.values(gameState.players).filter(p => p.alive),
+      ...gameState.bots.filter(b => b.alive)
+    ];
+    if (anyoneLeft.length === 0) {
+      const vaultKeeperBot = {
+        id: `vaultkeeper_${Date.now()}`,
+        name: '🏦 Vault Keeper',
+        x: 0, y: 0, angle: 0, targetAngle: 0,
+        lengthScore: gameConstants.player.startLength,
+        bounty: marble.bounty,
+        kills: 0, alive: true, boosting: false,
+        isBot: true, isGolden: true, isVaultKeeper: true,
+        lastUpdate: Date.now(), spawnTime: Date.now(),
+        pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+        _lastValidX: 0, _lastValidY: 0, _lastAngle: 0,
+        _aiState: 'IDLE', _steerSmooth: 0, _wanderCurve: 0,
+        _personality: { aggression: 0, speed: 0 }
+      };
+      vaultKeeperBot.pathBuffer.reset(0, 0);
+      gameState.bots.push(vaultKeeperBot);
+      console.log(`🏦 VAULT KEEPER SPAWNED: Bounty $${marble.bounty.toFixed(2)} | Vault floor: $${gameState.goldenVaultFloor}`);
+      stateBackup.saveNow();
+    }
+  }
 }
   
 io.emit('marbleDeath', {
@@ -2136,12 +2545,52 @@ io.emit('marbleDeath', {
 // SOCKET.IO HANDLERS (with reconciliation from Doc 14)
 // ============================================================================
 
+// ════════════════════════════════════════════════════════════
+// DEFERRED SPAWN — stores intent, player NOT in gameState yet
+// Zero collision surface, zero broadcast, zero movement
+// ════════════════════════════════════════════════════════════
+function _prepareSpawn(socket, data) {
+  const spawnPos = findSafeSpawn(
+    gameConstants.arena?.spawnMinDistance || 200,
+    gameConstants.arena.radius
+  );
+
+  // Store spawn intent on socket — NOT in gameState
+  socket._spawnIntent = {
+    name: data.name || `Player${Math.floor(Math.random() * 1000)}`,
+    marbleType: data.marbleType || 'GALAXY1',
+    spawnX: spawnPos.x,
+    spawnY: spawnPos.y,
+    timestamp: Date.now()
+  };
+
+  // Send position so client can position camera + paint marble (hidden)
+  socket.emit('spawnPosition', {
+    x: spawnPos.x,
+    y: spawnPos.y,
+    angle: 0
+  });
+
+  console.log(`📦 Spawn intent: ${socket._spawnIntent.name} at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)}) — waiting for playerReady`);
+
+  // Timeout: if playerReady never arrives in 12s, clean up and kick
+  socket._spawnTimeout = setTimeout(() => {
+    if (socket._spawnIntent && socket.connected) {
+      console.log(`⚠️ SPAWN TIMEOUT: ${socket._spawnIntent.name} — no playerReady after 12s`);
+      delete socket._spawnIntent;
+      socket.emit('spawnRejected', { message: 'Spawn timeout — please try again.' });
+      socket.disconnect(true);
+    }
+  }, 12000);
+}
+
 io.on('connection', (socket) => {
-  console.log(`ðŸ”Œ Player connected: ${socket.id.substring(0, 8)}`);
+  console.log(`📌 Player connected: ${socket.id.substring(0, 8)}`);
   
 socket.emit('init', {
     playerId: socket.id,
     constants: gameConstants,
+    serverMode: SERVER_MODE,
     gameState: {
       players: Object.fromEntries(
         Object.entries(gameState.players)
@@ -2154,95 +2603,51 @@ socket.emit('init', {
             lastProcessedInput: p.lastProcessedInput, nextTierIndex: p.nextTierIndex || 0
           }])
       ),
-      bots: gameState.bots.filter(b => b && b.alive).map(b => ({
-        id: b.id, name: b.name, marbleType: b.marbleType,
-        x: b.x, y: b.y, angle: b.angle, lengthScore: b.lengthScore,
-        bounty: b.bounty, alive: b.alive, isGolden: b.isGolden, boosting: b.boosting || false
-      })),
-      coins: gameState.coins.map(c => ({
+bots: gameState.bots.filter(b => b && b.alive).map(b => ({
+    id: b.id, name: b.name, marbleType: b.marbleType,
+    x: b.x, y: b.y, angle: b.angle, lengthScore: b.lengthScore,
+    bounty: b.bounty, kills: b.kills || 0, alive: b.alive, isGolden: b.isGolden, boosting: b.boosting || false
+  })),
+coins: gameState.coins.map(c => ({
         id: c.id, x: c.x, y: c.y, vx: c.vx, vy: c.vy,
         radius: c.radius, growthValue: c.growthValue,
-        marbleType: c.marbleType, rotation: c.rotation || 0
+        marbleType: c.marbleType, rotation: c.rotation || 0,
+        isDropped: c.isDropped || false, sizeMultiplier: c.sizeMultiplier || 1.0
       }))
     }
   });
 
   socket.on('playerSetup', (data) => {
-    const spawnPos = findSafeSpawn(
-      gameConstants.arena?.spawnMinDistance || 200,
-      gameConstants.arena.radius
-    );
-
-const player = {
-      id: socket.id,
-      name: data.name || `Player${Math.floor(Math.random() * 1000)}`,
-      marbleType: data.marbleType || 'GALAXY1',
-      x: spawnPos.x,
-      y: spawnPos.y,
-      angle: 0,
-      targetAngle: 0,
-      lengthScore: gameConstants.player.startLength,
-      bounty: gameConstants.player.startBounty,
-      kills: 0,
-      alive: true,
-      boosting: false,
-      isBot: false,
-      isGolden: false,
-      lastUpdate: Date.now(),
-      spawnTime: Date.now(),
-      pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
-      _lastValidX: spawnPos.x,
-      _lastValidY: spawnPos.y,
-      _lastAngle: 0,
-
-_lastAngle: 0,
-  lastProcessedInput: -1,  // âœ… FIX: Initialize for input reconciliation
-  // âœ… SERVER-AUTHORITATIVE PAYOUT TRACKING
-
-   // âœ… SERVER-AUTHORITATIVE PAYOUT TRACKING (SAWTOOTH)
-      nextTierIndex: 0,
-      totalPayout: 0
-    };
-    
-    player.pathBuffer.reset(player.x, player.y);
-    gameState.players[socket.id] = player;
-
-    io.emit('playerJoined', { player });
-    socket.emit('spawnPosition', {
-      x: player.x,
-      y: player.y,
-      angle: player.angle
-    });
- 
-    player.isPaidSession = socket.isPaidSession || false;   
-console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos.y.toFixed(0)})`);
-
-    // ═══ VAULT KEEPER ABSORPTION ═══
-    const vaultKeeper = gameState.bots.find(b => b.isVaultKeeper && b.alive);
-    if (vaultKeeper) {
-      console.log(`🏦 VAULT KEEPER ABSORBED by ${player.name} | Bounty: $${vaultKeeper.bounty.toFixed(2)}`);
-      // Run vault transfer sequence: treat as if this player killed the vault keeper
-      killMarble(vaultKeeper, socket.id);
-    }
-
-
-// â”€â”€ $TTAW: Start payout session if authenticated â”€â”€
-    if (socket.privyUserId) {
-      payouts.startSession(
-        socket.privyUserId,
-        socket.id,
-        player.name,
-        socket.isPaidSession || false
-      );
-      // Award passive survival tokens (0.05 $TTAW/min)
-      socket._survivalInterval = setInterval(() => {
-        if (gameState.players[socket.id]?.alive) {
-          rewards.handleSurvivalTick(socket.privyUserId);
+    // ═══ PAID GATE SAFETY NET ═══
+    // Client SHOULD wait for buyInConfirmed before sending playerSetup
+    // If isPaidSession is still false, the Solana verification is still in-flight
+    if (IS_PAID_SERVER && !socket.isPaidSession) {
+      console.log(`⏳ PAID GATE: Waiting for buyIn — ${data.name || 'Anonymous'} (${socket.privyUserId || 'anon'})`);
+      socket._pendingSetupData = data;
+      let waitTicks = 0;
+      socket._paidGateInterval = setInterval(() => {
+        waitTicks++;
+        if (socket.isPaidSession) {
+          clearInterval(socket._paidGateInterval);
+          delete socket._paidGateInterval;
+          console.log(`✅ PAID GATE: Verified after ${waitTicks}s — preparing spawn`);
+          _prepareSpawn(socket, socket._pendingSetupData);
+          delete socket._pendingSetupData;
+        } else if (waitTicks >= 10 || !socket.connected) {
+          clearInterval(socket._paidGateInterval);
+          delete socket._paidGateInterval;
+          if (socket.connected) {
+            console.log(`🚫 BLOCKED UNPAID: ${data.name || 'Anonymous'} — no buyIn after ${waitTicks}s`);
+            socket.emit('spawnRejected', { message: 'Payment verification timed out.' });
+            socket.disconnect(true);
+          }
+          delete socket._pendingSetupData;
         }
-      }, 60000);
+      }, 1000);
+      return;
     }
 
-
+    _prepareSpawn(socket, data);
   });
 
 // ── DEPOSIT WATCHER: Subscribe to player wallet on auth ──
@@ -2308,18 +2713,29 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
               rawAmount = Number(view.getBigUint64(64, true));
             } else { return; }
 
-            const newUsdc = rawAmount / 1e6;
+        const newUsdc = rawAmount / 1e6;
             const prev = socket._depositSubs.lastUsdc ?? 0;
             const diff = newUsdc - prev;
 
+            // ✅ Debounce: ignore duplicate callbacks within 5 seconds
+            const now = Date.now();
+            const lastDetect = socket._depositSubs._lastUsdcDetectTime || 0;
+            const lastDiff = socket._depositSubs._lastUsdcDiff || 0;
+
             if (diff > 0.001) {
-              console.log(`💵 USDC deposit detected (${walletAddress.slice(0, 8)}...): +$${diff.toFixed(2)}`);
-              socket.emit('deposit-received', {
-                type: 'USDC',
-                amount: diff,
-                newBalance: newUsdc,
-                formatted: `$${diff.toFixed(2)} USDC`
-              });
+if (now - lastDetect < 10000 && Math.abs(diff - lastDiff) < 0.1) {
+                  // Same amount within 5s — duplicate callback, skip
+              } else {
+                console.log(`💵 USDC deposit detected (${walletAddress.slice(0, 8)}...): +$${diff.toFixed(2)}`);
+                socket.emit('deposit-received', {
+                  type: 'USDC',
+                  amount: diff,
+                  newBalance: newUsdc,
+                  formatted: `$${diff.toFixed(2)} USDC`
+                });
+                socket._depositSubs._lastUsdcDetectTime = now;
+                socket._depositSubs._lastUsdcDiff = diff;
+              }
             }
             socket._depositSubs.lastUsdc = newUsdc;
           } catch (parseErr) {
@@ -2352,15 +2768,12 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
      const claims = await rewards.privy.verifyAuthToken(data.privyToken);
       socket.privyUserId = claims.userId;
 
-      // Start deposit watcher if player has a wallet
+// Start deposit watcher if player has a wallet
       try {
-        const privyUser = await rewards.privy.privy.getUser(claims.userId);
-        const solWallet = privyUser?.linkedAccounts?.find(
-          a => a.type === 'wallet' && a.walletClientType === 'privy' && a.chainType === 'solana'
-        );
-        if (solWallet?.address) {
-          socket._walletAddress = solWallet.address;
-          startDepositWatcher(solWallet.address);
+        const walletAddress = await rewards.privy.getUserWalletAddress(claims.userId);
+        if (walletAddress) {
+          socket._walletAddress = walletAddress;
+          startDepositWatcher(walletAddress);
         }
       } catch (watchErr) {
         console.warn(`⚠️ Could not start deposit watcher: ${watchErr.message}`);
@@ -2378,6 +2791,11 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
       // Send current token balance
       const balance = await rewards.privy.getTokenBalance(claims.userId);
       socket.emit('tokenBalance', { balance });
+      // Store wallet address for sender verification
+      try {
+        const userWallet = await rewards.privy.getUserWalletAddress(claims.userId);
+        if (userWallet) socket._walletAddress = userWallet;
+      } catch (e) { /* wallet fetch optional */ }
       console.log(`ðŸ” Player authenticated: ${claims.userId}`);
     } catch (err) {
       console.error('âŒ Auth failed:', err.message);
@@ -2385,10 +2803,43 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
     }
   });
 
- // ── USDC Buy-in (paid play) with password gate ──
-  socket.on('buyIn', async (data) => {
+
+  // ── Queue Spawn — player already paid via queue, just needs isPaidSession flag ──
+  socket.on('queueSpawnConnect', (data) => {
+    if (!IS_PAID_SERVER) return;
     if (!socket.privyUserId) {
       socket.emit('buyInError', { message: 'Not authenticated' });
+      return;
+    }
+
+    // Verify this player actually went through the queue
+    if (!queueManager || !queueManager.hasSpawned(socket.privyUserId)) {
+      console.log(`❌ Queue spawn rejected — not in spawnedUsers: ${socket.privyUserId}`);
+      socket.emit('buyInError', { message: 'No queue record found. Please rejoin.' });
+      return;
+    }
+
+  // Mark as paid session (payment was already verified + recorded at queue join)
+    socket.isPaidSession = true;
+    // NOTE: Don't start payout session here — playerSetup handler does it
+    // with the correct isPaid flag, playerId, and playerName
+    console.log(`🎟️ Queue spawn confirmed: ${socket.privyUserId}`);
+    socket.emit('buyInConfirmed', { amount: 1.10, txSignature: 'QUEUE_VERIFIED' });
+  });
+
+
+ // ── USDC Buy-in (paid play) with password gate ──
+  socket.on('buyIn', async (data) => {
+    if (!IS_PAID_SERVER) { socket.emit('buyInError', { message: 'This is a free server' }); return; }
+    if (!socket.privyUserId) {
+      socket.emit('buyInError', { message: 'Not authenticated' });
+      return;
+    }
+
+// ═══ GOLDN YARD TIME GATE — block paid play when arena is closed ═══
+    if (goldenHourManager && !goldenHourManager.canJoinPaid()) {
+      socket.emit('buyInError', { message: 'GOLDN YARD TIME is closed! Come back at ' + goldenHourManager.getStatus().opensAt });
+      console.log(`🔒 Yard closed — blocked paid play: ${socket.privyUserId}`);
       return;
     }
 
@@ -2416,7 +2867,14 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
         return;
       }
       const buyInUsdc = gameConstants.economy.buyIn.amountUsdc;
-      socket.isPaidSession = true;
+socket.isPaidSession = true;
+      // ✅ Fix race condition: player may have spawned before buyIn verification finished
+      const existingPlayer = gameState.players[socket.id];
+      if (existingPlayer) {
+        existingPlayer.isPaidSession = true;
+        existingPlayer._isPaidSession = true;
+        console.log(`✅ LATE PAID FLAG: ${existingPlayer.name} now marked as paid (buyIn verified after spawn)`);
+      }
       feeManager.recordBuyIn(buyInUsdc);
       if (auditLog) {
         auditLog.logBuyIn(socket.privyUserId, gameState.players[socket.id]?.name || 'unknown', 'DEV_BYPASS', 0);
@@ -2437,16 +2895,22 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
         return;
       }
 
-      // 2. Fetch transaction from Solana
+// 2. Fetch transaction from Solana — retry up to 10 times (TX may not be visible yet)
       const { Connection, PublicKey } = require('@solana/web3.js');
       const connection = new Connection(process.env.SOLANA_RPC_URL, 'confirmed');
-      const tx = await connection.getParsedTransaction(data.txSignature, {
-        commitment: gameConstants.economy.security.commitment, // 'finalized'
-        maxSupportedTransactionVersion: 0
-      });
+      let tx = null;
+      for (let attempt = 0; attempt < 10; attempt++) {
+        tx = await connection.getParsedTransaction(data.txSignature, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0
+        });
+        if (tx) break;
+        console.log(`⏳ BuyIn TX not found yet, retry ${attempt + 1}/10... (${data.txSignature.slice(0, 16)})`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
 
       if (!tx) {
-        socket.emit('buyInError', { message: 'Transaction not found — may not be finalized yet. Try again in a few seconds.' });
+        socket.emit('buyInError', { message: 'Transaction not found after 20 seconds. Please try again.' });
         return;
       }
 
@@ -2493,12 +2957,42 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
         return;
       }
 
+// 4b. Verify sender matches authenticated wallet
+      if (socket._walletAddress) {
+        let senderAddress = null;
+        for (const post of postBalances) {
+          if (post.mint !== usdcMint) continue;
+          const pre = preBalances.find(p => p.accountIndex === post.accountIndex && p.mint === usdcMint);
+          const preBal = pre ? parseInt(pre.uiTokenAmount.amount) : 0;
+          const postBal = parseInt(post.uiTokenAmount.amount);
+          if (postBal - preBal < 0) senderAddress = post.owner;
+        }
+        if (senderAddress && senderAddress !== socket._walletAddress) {
+          console.warn(`⚠️ BuyIn sender mismatch: expected ${socket._walletAddress.slice(0,8)}..., got ${senderAddress.slice(0,8)}...`);
+          socket.emit('buyInError', { message: 'Transaction sender does not match your wallet' });
+          return;
+        }
+      }
+
       // 5. Mark signature as used (replay protection)
       if (!gameState.usedBuyInSignatures) gameState.usedBuyInSignatures = new Set();
       gameState.usedBuyInSignatures.add(data.txSignature);
 
-      // 6. Confirm buy-in
+// 6. Confirm buy-in
       socket.isPaidSession = true;
+      // ✅ Fix race condition: player may have spawned before buyIn verification finished
+      const existingPlayer = gameState.players[socket.id];
+      if (existingPlayer) {
+        existingPlayer.isPaidSession = true;
+        existingPlayer._isPaidSession = true;
+        console.log(`✅ LATE PAID FLAG: ${existingPlayer.name} now marked as paid (buyIn verified after spawn)`);
+        // Also update payout session to PAID
+        const session = payouts.activeSessions?.get(socket.privyUserId);
+        if (session && !session.isPaid) {
+          session.isPaid = true;
+          console.log(`✅ LATE SESSION UPGRADE: ${existingPlayer.name} session now [PAID]`);
+        }
+      }
       feeManager.recordBuyIn(buyInUsdc);
 
       // Log for audit
@@ -2567,6 +3061,181 @@ console.log(`✅ ${player.name} spawned at (${spawnPos.x.toFixed(0)}, ${spawnPos
     payouts.setNotificationPreference(socket.privyUserId, !!data?.enabled);
   });
 
+// ── Forfeit respawn reservation: player chose Return to Lobby, release ghost slot immediately ──
+  socket.on('forfeitRespawn', () => {
+    if (!socket.privyUserId) return;
+    if (respawnReservations.has(socket.privyUserId)) {
+      respawnReservations.delete(socket.privyUserId);
+      // Clean up ghost from gameState
+      Object.keys(gameState.players).forEach(id => {
+        const p = gameState.players[id];
+        if (p && !p.alive && p.privyId === socket.privyUserId) {
+          io.emit('playerLeft', { playerId: id });
+          delete gameState.players[id];
+        }
+      });
+      if (queueManager?.getLength() > 0) setTimeout(() => drainQueueToArena(), 500);
+      console.log(`👻 Respawn forfeited by ${socket.privyUserId} — slot released, queue notified`);
+    }
+  });
+
+// ── Claim a pocketed mib (before playerSetup) ──
+  socket.on('claim-pocket', async (data) => {
+    if (!data?.mibId || !socket.privyUserId) return;
+    try {
+      const serverUrl = `http://localhost:${PORT}`;
+      const resp = await fetch(`${serverUrl}/api/claim-pocketed-mib`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ privyId: socket.privyUserId, mibId: data.mibId }),
+      });
+      const result = await resp.json();
+
+
+if (result.success) {
+        socket._claimedPocket = result;
+        socket.isPaidSession = true; // Pocket resume counts as a paid session — no new USDC needed
+        socket.emit('pocket-claimed', result);
+        console.log(`🎱 Pocket claimed via socket: ${socket.privyUserId} | $${result.bounty}`);
+      } else {
+        socket.emit('pocket-claim-error', { error: result.error || 'Claim failed' });
+      }
+    } catch (err) {
+      console.error('❌ Pocket claim error:', err.message);
+      socket.emit('pocket-claim-error', { error: 'Server error' });
+    }
+  });
+
+// ══════════════════════════════════════════════════════════
+  // QUEUE SYSTEM — Join, Skip, Leave
+  // ══════════════════════════════════════════════════════════
+
+  socket.on('joinQueue', async (data) => {
+    if (!socket.privyUserId) {
+      socket.emit('queueError', { message: 'Not authenticated' });
+      return;
+    }
+
+    // Must be paid mode
+    if (!data?.txSignature) {
+      socket.emit('queueError', { message: 'No transaction signature provided' });
+      return;
+    }
+
+    // Password gate (beta)
+    const gateEnabled = gameConstants.economy?.passwordGate?.enabled;
+    const correctPassword = process.env.PAID_PLAY_PASSWORD;
+    if (gateEnabled && correctPassword) {
+      if (!data?.password || data.password !== correctPassword) {
+        socket.emit('queueError', { message: 'Invalid access code' });
+        return;
+      }
+    }
+
+// Derive wallet address server-side from Privy — don't trust client
+    let walletAddress = socket._walletAddress || null;
+    if (!walletAddress) {
+      try {
+        walletAddress = await rewards.privy.getUserWalletAddress(socket.privyUserId);
+        if (walletAddress) socket._walletAddress = walletAddress;
+      } catch (e) {
+        console.warn('⚠️ Could not derive wallet for queue:', e.message);
+      }
+    }
+    if (!walletAddress) {
+      // Fallback to client-provided (better than nothing for refunds)
+      walletAddress = data.walletAddress || null;
+    }
+    if (!walletAddress) {
+      socket.emit('queueError', { message: 'Could not determine wallet address for refund protection' });
+      return;
+    }
+
+// ═══ VERIFY USDC PAYMENT (full mint/amount/recipient/sender check) ═══
+    if (data.txSignature !== 'DEV_BYPASS') {
+      try {
+        // Derive wallet from Privy — don't trust client walletAddress for verification
+        const verifiedWallet = socket._walletAddress || walletAddress;
+        const result = await verifyBuyInTransaction(data.txSignature, verifiedWallet);
+        if (!result.success) {
+          socket.emit('queueError', { message: result.error });
+          return;
+        }
+        console.log(`✅ Queue TX verified: $${result.receivedUsdc.toFixed(2)} USDC | Sender: ${result.senderAddress?.slice(0,8) || '?'}...`);
+      } catch (err) {
+        console.error('❌ Queue TX verification failed:', err.message);
+        socket.emit('queueError', { message: 'Payment verification failed' });
+        return;
+      }
+    } else {
+      if (process.env.DEV_BYPASS !== 'true') {
+        socket.emit('queueError', { message: 'Dev bypass not enabled' });
+        return;
+      }
+    }
+
+    // Add to queue
+    const result = await queueManager.join(
+      socket.privyUserId,
+      socket.id,
+      data.playerName || 'Anonymous',
+      data.marbleType || 'GALAXY1',
+      data.txSignature,
+      walletAddress,
+      data.password || null
+    );
+
+    if (result.success) {
+      socket.isPaidSession = true;
+      socket.emit('queueJoined', { position: result.position, total: queueManager.getLength() });
+      console.log(`🎟️ ${data.playerName} joined queue at #${result.position}`);
+
+      // If arena has room RIGHT NOW, drain immediately
+      if (!queueManager.isArenaFull()) {
+        drainQueueToArena();
+      }
+    } else {
+      socket.emit('queueError', { message: result.error });
+    }
+  });
+
+  socket.on('queueSkip', async (data) => {
+    if (!socket.privyUserId) return;
+
+    // Verify TTAW spend (txSignature for the token burn/transfer)
+    if (!data?.txSignature && data?.txSignature !== 'DEV_BYPASS') {
+      socket.emit('queueError', { message: 'No TTAW transaction provided' });
+      return;
+    }
+
+    // TODO: verify TTAW spend via spendVerifier when token is live
+    // For now, trust the client (or DEV_BYPASS)
+
+    const result = queueManager.useSkip(socket.privyUserId);
+    if (result.success) {
+      socket.emit('queueSkipped', { newPosition: result.newPosition + 1 });
+    } else {
+      socket.emit('queueError', { message: result.error });
+    }
+  });
+
+socket.on('leaveQueue', () => {
+    if (!socket.privyUserId) return;
+    // Partial refund: $1.00 back, $0.10 entry fee forfeited
+    queueManager.voluntaryLeave(socket.privyUserId, socket.id)
+      .then(result => {
+        if (!result.success) {
+          socket.emit('queueLeft', { message: 'Left queue. Refund unavailable — contact support.' });
+        }
+        // On success, voluntaryLeave emits queueRefund directly to socket
+      })
+      .catch(err => {
+        console.error('❌ voluntaryLeave error:', err.message);
+        socket.emit('queueLeft', { message: 'Left queue. Refund unavailable — contact support.' });
+      });
+  });
+
+
 socket.on('auth-sync', async (data) => {
     if (!data || !data.privyId) return;
     try {
@@ -2589,7 +3258,42 @@ socket.on('auth-sync', async (data) => {
         if (gameState.players[socket.id]) {
           gameState.players[socket.id].privyId = data.privyId;
         }
-        console.log('âœ… [Supabase] Player synced:', data.name);
+console.log('✅ [Supabase] Player synced:', data.name);
+
+        // ── Cancel pending queue removal if player reconnected in time ──
+        if (queueGraceTimers.has(data.privyId)) {
+          clearTimeout(queueGraceTimers.get(data.privyId));
+          queueGraceTimers.delete(data.privyId);
+          console.log(`🔄 Queue grace cancelled — reconnected: ${data.name}`);
+        }
+
+        // ── Update socket ID if player reconnected while still in queue ──
+        if (queueManager && queueManager.isQueued(data.privyId)) {
+          queueManager.updateSocket(data.privyId, socket.id);
+          socket.isPaidSession = true;
+          console.log(`🔄 Queue socket updated for reconnected player: ${data.name}`);
+        }
+
+        // ── Check if this player was dequeued from queue (already paid) ──
+        if (dequeuedPlayers.has(data.privyId)) {
+          const queueEntry = dequeuedPlayers.get(data.privyId);
+          socket.isPaidSession = true;
+          dequeuedPlayers.delete(data.privyId);
+
+          // NOTE: Don't start payout session here — playerSetup handles it
+          // using IS_PAID_SERVER (no race condition). Just mark the socket.
+          if (auditLog) {
+            auditLog.logBuyIn(data.privyId, data.name, queueEntry.txSignature, 0);
+          }
+          console.log(`🎮 Dequeued player connected as PAID: ${data.name}`);
+
+          // Re-emit queueSpawning on new socket (reconnected during drain window)
+          socket.emit('queueSpawning', {
+            playerName: queueEntry.playerName,
+            marbleType: queueEntry.marbleType,
+          });
+          console.log(`🎮 Re-notified reconnected dequeued player: ${data.name}`);
+        }
       }
     } catch (err) {
       console.error('[Supabase] auth-sync error:', err);
@@ -2619,25 +3323,189 @@ if (typeof data.targetAngle !== 'number' ||
     player.lastUpdate = Date.now();
   });
 
+// ══════════════════════════════════════════════════════
+  // DEFERRED SPAWN: playerSetup stores intent, playerReady creates player
+  // Player does NOT exist in gameState until playerReady → zero collision surface
+  // ══════════════════════════════════════════════════════
+
+  socket.on('playerReady', () => {
+    if (!socket._spawnIntent) {
+      console.log(`⚠️ playerReady without spawn intent: ${socket.id.substring(0, 8)}`);
+      return;
+    }
+
+    // Clear timeout
+    if (socket._spawnTimeout) {
+      clearTimeout(socket._spawnTimeout);
+      delete socket._spawnTimeout;
+    }
+
+    const intent = socket._spawnIntent;
+    delete socket._spawnIntent;
+
+    // ═══ NOW CREATE THE ACTUAL PLAYER IN GAMESTATE ═══
+    const player = {
+      id: socket.id,
+      name: intent.name,
+      marbleType: intent.marbleType,
+      x: intent.spawnX,
+      y: intent.spawnY,
+      angle: 0,
+      targetAngle: 0,
+      lengthScore: gameConstants.player.startLength,
+      bounty: socket._claimedPocket?.bounty || gameConstants.player.startBounty,
+      kills: 0,
+      alive: true,
+      boosting: false,
+      isBot: false,
+      isGolden: false,
+      lastUpdate: Date.now(),
+      spawnTime: Date.now(),
+      spawnProtection: true,
+      pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
+      _lastValidX: intent.spawnX,
+      _lastValidY: intent.spawnY,
+      _lastAngle: 0,
+      lastProcessedInput: -1,
+      nextTierIndex: socket._claimedPocket?.nextTierIndex || 0,
+      totalPayout: socket._claimedPocket?.totalPayout || 0
+    };
+
+    player.pathBuffer.reset(player.x, player.y);
+
+    // Copy Privy auth
+    if (socket.privyUserId) {
+      player.privyId = socket.privyUserId;
+    }
+
+    // Apply pocketed mib data
+    if (socket._claimedPocket) {
+      player.kills = socket._claimedPocket.kills || 0;
+      player.lengthScore = socket._claimedPocket.lengthScore || gameConstants.player.startLength;
+      player.marbleType = socket._claimedPocket.marbleType || player.marbleType;
+      console.log(`🎱 POCKET RESUMED: ${player.name} | Bounty: $${player.bounty} | Kills: ${player.kills} | Tier: ${player.nextTierIndex}`);
+      socket._claimedPocket = null;
+    }
+
+    // Mark paid session
+    player.isPaidSession = socket.isPaidSession === true;
+    player._isPaidSession = socket.isPaidSession === true;
+
+    // Final paid check (defense in depth — should never trigger with client gate)
+    if (IS_PAID_SERVER && !socket.isPaidSession) {
+      console.log(`🚫 BLOCKED UNPAID at playerReady: ${player.name} (${socket.privyUserId || 'anon'})`);
+      socket.emit('spawnRejected', { message: 'Payment required.' });
+      socket.disconnect(true);
+      return;
+    }
+
+  // ── Clean up any ghost from a previous life for this privyId (Play Again flow) ──
+    if (socket.privyUserId) {
+      respawnReservations.delete(socket.privyUserId);
+      Object.keys(gameState.players).forEach(id => {
+        const p = gameState.players[id];
+        if (p && !p.alive && p.privyId === socket.privyUserId && id !== socket.id) {
+          console.log(`👻 Ghost cleaned up on respawn: ${p.name} (${id})`);
+          io.emit('playerLeft', { playerId: id });
+          delete gameState.players[id];
+        }
+      });
+    }
+
+    // ═══ ADD TO GAMESTATE — player is NOW real, collidable, visible ═══
+    gameState.players[socket.id] = player;
+    io.emit('playerJoined', { player });
+
+    console.log(`✅ ${player.name} SPAWNED at (${player.x.toFixed(0)}, ${player.y.toFixed(0)}) — isPaid: ${player._isPaidSession}`);
+
+    // Clear spawn protection after 3 seconds
+    setTimeout(() => {
+      if (gameState.players[socket.id]) {
+        gameState.players[socket.id].spawnProtection = false;
+      }
+    }, 3000);
+
+    // ── Start payout session ──
+    if (socket.privyUserId) {
+      payouts.startSession(
+        socket.privyUserId,
+        socket.id,
+        player.name,
+        player._isPaidSession
+      );
+      socket._survivalInterval = setInterval(() => {
+        if (gameState.players[socket.id]?.alive) {
+          rewards.handleSurvivalTick(socket.privyUserId);
+        }
+      }, 60000);
+    }
+
+    // ═══ VAULT KEEPER ABSORPTION ═══
+    const vaultKeeper = gameState.bots.find(b => b.isVaultKeeper && b.alive);
+    if (vaultKeeper) {
+      console.log(`🏦 VAULT KEEPER ABSORBED by ${player.name} | Bounty: $${vaultKeeper.bounty.toFixed(2)}`);
+      killMarble(vaultKeeper, socket.id);
+    }
+
+    updateGoldenMarble();
+  });
+
 socket.on('disconnect', async () => {
+  // ── Clean up deferred spawn intent if player never sent playerReady ──
+    if (socket._spawnIntent) {
+      if (socket._spawnTimeout) clearTimeout(socket._spawnTimeout);
+      delete socket._spawnIntent;
+      delete socket._spawnTimeout;
+      console.log(`📌 Player disconnected before spawning: ${socket.id.substring(0, 8)}`);
+    }
+    if (socket._paidGateInterval) {
+      clearInterval(socket._paidGateInterval);
+      delete socket._paidGateInterval;
+      delete socket._pendingSetupData;
+    }
+
+// ── Queue: 10s grace period before removing (allows Socket.IO reconnect) ──
+    if (queueManager && socket.privyUserId) {
+      if (queueManager.isQueued(socket.privyUserId)) {
+        const privyId = socket.privyUserId;
+        const removalTimer = setTimeout(() => {
+          if (queueManager.isQueued(privyId)) {
+            console.log(`⏰ Queue grace expired for ${privyId} — removing (no refund)`);
+            queueManager.remove(privyId);
+          }
+          queueGraceTimers.delete(privyId);
+        }, 10000);
+        queueGraceTimers.set(privyId, removalTimer);
+        console.log(`⏳ Queue grace period started for ${privyId} (10s to reconnect)`);
+      }
+    }
+    // After player cleanup below, we'll drain the queue
  stopDepositWatcher(); 
     console.log(`📌 Player disconnected: ${socket.id.substring(0, 8)}`);
     
     const player = gameState.players[socket.id];
     
-    // ✅ Solo player exit bonus: if only human player in game, award $1.05
-    if (player && player.alive) {
-      const humanPlayers = Object.values(gameState.players).filter(p => p.alive);
-      if (humanPlayers.length === 1 && humanPlayers[0].id === socket.id) {
-        const soloBonus = gameConstants.soloExitBonus || 1.05;
-        player.totalPayout = (player.totalPayout || 0) + soloBonus;
-        console.log(`🏆 Solo exit bonus: $${soloBonus} → ${player.name}`);
-        io.to(socket.id).emit('cashout', {
-          tiers: [{ amount: soloBonus, label: 'Solo Exit Bonus' }],
-          totalPayout: player.totalPayout
-        });
-        stateBackup.saveNow();
+// ✅ Last player refund — wall death path already handled it, just clean up
+    if (player && player._refundProcessed) {
+      if (socket._survivalInterval) clearInterval(socket._survivalInterval);
+      if (queueManager && queueManager.getLength() > 0) {
+        setTimeout(() => drainQueueToArena(), 500);
       }
+      return;
+    }
+    
+    // ✅ Last player refund check (disconnect path — player still alive)
+    if (player && player.alive && tryLastPlayerRefund(player)) {
+      const privyId = socket.privyUserId;
+      if (privyId) {
+        payouts.endSession(privyId, 'last_player_refund');
+        rewards.handleDeath(privyId);
+      }
+      if (socket._survivalInterval) clearInterval(socket._survivalInterval);
+      if (queueManager && queueManager.getLength() > 0) {
+        setTimeout(() => drainQueueToArena(), 500);
+      }
+      return;
     }
 
 // ✅ Disconnect = death: drop peewees + transfer bounty to highest player
@@ -2650,47 +3518,11 @@ socket.on('disconnect', async () => {
       if (allAlive.length > 0) {
         // Credit kill to second-highest bounty player (vault transfer sequence applies)
         const sorted = allAlive.sort((a, b) => (b.bounty || 0) - (a.bounty || 0));
-        const creditTo = sorted[0].id;
-        killMarble(player, creditTo);
-      } else if (player.isGolden && (player.bounty || 0) > 0) {
-        // ═══ VAULT KEEPER: No players left, preserve golden bounty ═══
-        const vaultKeeperBot = {
-          id: `vaultkeeper_${Date.now()}`,
-          name: '🏦 Vault Keeper',
-          x: 0,
-          y: 0,
-          angle: 0,
-          targetAngle: 0,
-          lengthScore: gameConstants.player.startLength,
-          bounty: player.bounty,
-          kills: 0,
-          alive: true,
-          boosting: false,
-          isBot: true,
-          isGolden: true,
-          isVaultKeeper: true,
-          lastUpdate: Date.now(),
-          spawnTime: Date.now(),
-          pathBuffer: new PathBuffer(gameConstants.spline.pathStepPx || 2),
-          _lastValidX: 0,
-          _lastValidY: 0,
-          _lastAngle: 0,
-          _aiState: 'IDLE',
-          _steerSmooth: 0,
-          _wanderCurve: 0,
-          _personality: { aggression: 0, speed: 0 }
-        };
-        vaultKeeperBot.pathBuffer.reset(0, 0);
-        gameState.bots.push(vaultKeeperBot);
-        
-        // Vault floor carries over — already set in gameState
-        console.log(`🏦 VAULT KEEPER SPAWNED: Bounty $${player.bounty.toFixed(2)} | Vault floor: $${gameState.goldenVaultFloor}`);
-        
-        // Kill the disconnected player without crediting anyone
-        marble_alive_false_only(player);
-      } else {
-        // Non-golden player, no one to credit — just die
-        marble_alive_false_only(player);
+      const creditTo = sorted[0].id;
+        killMarble(player, creditTo, 'disconnect');
+} else {
+        // No other players alive — killMarble handles vault keeper spawning
+        killMarble(player, null, 'disconnect');
       }
     }
 
@@ -2701,14 +3533,69 @@ socket.on('disconnect', async () => {
       payouts.endSession(privyId, 'disconnect');
       rewards.handleDeath(privyId);
     }
-    delete gameState.players[socket.id];
-    io.emit('playerLeft', { playerId: socket.id });
+// ── Preserve ghost slot if player has an active respawn reservation ──
+    const disconnPlayer = gameState.players[socket.id];
+    if (disconnPlayer && !disconnPlayer.alive && socket.privyUserId && respawnReservations.has(socket.privyUserId)) {
+      console.log(`👻 Disconnect — keeping ghost slot for ${socket.privyUserId} (respawn reservation active)`);
+      // Don't delete — ghost cleanup interval will handle expiry and queue drain
+    } else {
+      delete gameState.players[socket.id];
+      io.emit('playerLeft', { playerId: socket.id });
+      // ── Drain queue: slot just opened ──
+      if (queueManager && queueManager.getLength() > 0) {
+        setTimeout(() => drainQueueToArena(), 500);
+      }
+    }
+
+    // ── Cleanup rate limiter entries for this socket ──
+    for (const key of rateLimits.keys()) {
+      if (key.startsWith(socket.id + ':')) rateLimits.delete(key);
+    }
   });
 });
 
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
+
+function drainQueueToArena() {
+  if (!queueManager || queueManager.getLength() === 0) return;
+
+  const entries = queueManager.drainToCapacity();
+
+  for (const entry of entries) {
+    // Store entry so auth-sync can recognize this player as paid
+    dequeuedPlayers.set(entry.privyUserId, entry);
+
+ // Notify via their yard socket — fall back to searching by privyUserId if socketId is stale
+    const yardSock = io.sockets.sockets.get(entry.socketId)
+      || [...io.sockets.sockets.values()].find(s => s.privyUserId === entry.privyUserId && s.connected);
+    if (yardSock && yardSock.connected) {
+      yardSock.emit('queueSpawning', {
+        playerName: entry.playerName,
+        marbleType: entry.marbleType,
+      });
+      console.log(`🎮 Notified ${entry.playerName} — spawning from queue`);
+    } else {
+      console.log(`⚠️ ${entry.playerName} disconnected — entry stays in dequeuedPlayers for reconnect`);
+    }
+  }
+
+// Auto-expire dequeued entries after 30 seconds — refund if they never connected
+  setTimeout(async () => {
+    for (const entry of entries) {
+      if (dequeuedPlayers.has(entry.privyUserId)) {
+        console.log(`⏰ Dequeued player ${entry.playerName} never connected — refunding`);
+        dequeuedPlayers.delete(entry.privyUserId);
+        try {
+          await queueManager._refundPlayer(entry, 'NEVER_CONNECTED');
+        } catch (err) {
+          console.error(`❌ Never-connected refund failed for ${entry.playerName}:`, err.message);
+        }
+      }
+    }
+  }, 30000);
+}
 
 function initializeGame() {
   console.log('ðŸŽ® Initializing game...');
@@ -2829,12 +3716,12 @@ const dt = 1 / TICK_RATE; // âœ… Fixed timestep: 1/60 = 0.01667s
   if (frameCount % 600 === 0) {
     const actualFPS = 600 / ((now - lastStatsTime) / 1000);
     
-    console.log(`ðŸ“Š Server Stats:
-    â”œâ”€ Target FPS: 60
-    â”œâ”€ Actual FPS: ${actualFPS.toFixed(1)}
-    â”œâ”€ Players: ${Object.keys(gameState.players).length}
-    â”œâ”€ Bots: ${gameState.bots.length}
-    â””â”€ Total Entities: ${Object.keys(gameState.players).length + gameState.bots.length + gameState.coins.length}`);
+    //console.log(`ðŸ“Š Server Stats:
+    //â”œâ”€ Target FPS: 60
+    //â”œâ”€ Actual FPS: ${actualFPS.toFixed(1)}
+    //â”œâ”€ Players: ${Object.keys(gameState.players).length}
+    //â”œâ”€ Bots: ${gameState.bots.length}
+    //â””â”€ Total Entities: ${Object.keys(gameState.players).length + gameState.bots.length + gameState.coins.length}`);
     
     lastStatsTime = now;
   }
@@ -2898,15 +3785,22 @@ const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 
     const distFromCenter = Math.sqrt(newX * newX + newY * newY);
     const maxAllowedDist = gameConstants.arena.radius - marbleRadius;
     
-    if (distFromCenter <= maxAllowedDist) {
+if (distFromCenter <= maxAllowedDist) {
       player.x = newX;
       player.y = newY;
       player.pathBuffer.add(player.x, player.y);
       player._lastValidX = newX;
       player._lastValidY = newY;
     } else {
-      player.alive = false;
+      // ✅ WALL DEATH: Only mark for death — do NOT set alive=false here
+      // killMarble() in step 2 handles alive=false, death drops, payouts, etc.
       player._markForDeath = true;
+      player._wallDeath = true;
+      // Clamp position to arena edge so they don't phase through
+      const clampDist = gameConstants.arena.radius - marbleRadius - 1;
+      const angle = Math.atan2(newY, newX);
+      player.x = Math.cos(angle) * clampDist;
+      player.y = Math.sin(angle) * clampDist;
     }
     
     player._lastAngle = player.angle;
@@ -2915,8 +3809,20 @@ const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 
   // ========================================
   // 2. HANDLE PLAYER DEATHS
   // ========================================
-  Object.values(gameState.players).forEach(player => {
+Object.values(gameState.players).forEach(player => {
     if (player._markForDeath && player.alive) {
+ // ✅ Check last player refund BEFORE normal death processing
+      if (tryLastPlayerRefund(player)) {
+        // End payout session so the accrued refund actually pays out
+        if (player.privyId) {
+          payouts.endSession(player.privyId, 'last_player_refund');
+          rewards.handleDeath(player.privyId);
+        }
+        delete player._markForDeath;
+        delete player._wallDeath;
+        return; // Clean exit — no death drops, no vault keeper
+      }
+      
       let creditTo = null;
       const allMarbles = [...Object.values(gameState.players), ...gameState.bots].filter(m => m.alive);
       const goldenMarble = allMarbles.find(m => m.isGolden && m.alive && m.id !== player.id);
@@ -2931,7 +3837,18 @@ const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 
         if (sorted.length > 0) creditTo = sorted[0].id;
       }
       
-      killMarble(player, creditTo);
+// ✅ Log wall deaths distinctly + capture flag BEFORE deleting
+      const isWallDeath = !!player._wallDeath;
+      if (player._wallDeath) {
+        const creditName = creditTo 
+          ? (gameState.players[creditTo]?.name || gameState.bots.find(b => b.id === creditTo)?.name || creditTo)
+          : 'NONE (vault keeper)';
+        console.log(`🧱 WALL DEATH: ${player.name} | Bounty: $${(player.bounty || 0).toFixed(2)} | Credit → ${creditName}`);
+        delete player._wallDeath;
+      }
+      
+      killMarble(player, creditTo, isWallDeath ? 'wall' : undefined);
+      delete player._markForDeath;
     }
   });
   
@@ -2988,13 +3905,17 @@ const collisionResults = checkCollisions(gameState, gameConstants);
   // ========================================
   // 8. WALL COLLISIONS
   // ========================================
-  const wallHits = checkWallCollisions();
+const wallHits = checkWallCollisions();
   for (const wallHit of wallHits) {
     if (killedThisFrame.has(wallHit.marbleId)) continue;
     
     const victim = gameState.players[wallHit.marbleId] || gameState.bots.find(b => b.id === wallHit.marbleId);
     if (victim && victim.alive) {
-      killMarble(victim, wallHit.creditTo);
+      const creditTarget = wallHit.creditTo
+        ? (gameState.players[wallHit.creditTo] || gameState.bots.find(b => b.id === wallHit.creditTo))
+        : null;
+      console.log(`🧱 WALL DEATH: ${victim.name} | Golden: ${victim.isGolden} | Bounty: $${(victim.bounty || 0).toFixed(2)} | Credit → ${creditTarget?.name || 'NONE (vault keeper)'}`);
+     killMarble(victim, wallHit.creditTo, 'wall');
       killedThisFrame.add(wallHit.marbleId);
     }
   }
@@ -3016,7 +3937,20 @@ if (tickCounter % 60 === 0) {
 Object.keys(gameState.players).forEach(playerId => {
   const player = gameState.players[playerId];
   if (player && !player.alive) {
-    console.log(`ðŸ§¹ Cleaning up ghost player: ${playerId}`);
+    // Keep ghost if they have an active respawn reservation (holds their arena slot)
+    if (player.privyId && respawnReservations.has(player.privyId)) {
+      const res = respawnReservations.get(player.privyId);
+      if (Date.now() < res.deadline) return; // Still within 50s window
+      // Reservation expired — clean up and pop queue
+      respawnReservations.delete(player.privyId);
+      console.log(`⏰ Respawn reservation expired: ${player.name} — slot released`);
+      io.emit('playerLeft', { playerId });
+      delete gameState.players[playerId];
+      if (queueManager?.getLength() > 0) setTimeout(() => drainQueueToArena(), 500);
+      return;
+    }
+    console.log(`🧹 Cleaning up ghost player: ${playerId}`);
+    io.emit('playerLeft', { playerId });
     delete gameState.players[playerId];
   }
 });
@@ -3087,8 +4021,8 @@ lastProcessedInput: p.lastProcessedInput,
   );
   
   // âœ… FIX: Only broadcast ALIVE bots
-  const cleanBots = gameState.bots
-    .filter(b => b && b.alive) // âœ… Filter dead bots
+const cleanBots = gameState.bots
+    .filter(b => b && b.alive)
     .map(b => ({
       id: b.id,
       name: b.name,
@@ -3098,7 +4032,8 @@ lastProcessedInput: p.lastProcessedInput,
       angle: b.angle,
       lengthScore: b.lengthScore,
       bounty: b.bounty,
-   alive: b.alive,
+      kills: b.kills || 0,
+      alive: b.alive,
       isGolden: b.isGolden,
       boosting: b.boosting || false
     }));
@@ -3113,17 +4048,20 @@ const cleanCoins = gameState.coins.map(c => ({
     radius: c.radius,
     growthValue: c.growthValue,
     marbleType: c.marbleType,
-rotation: c.rotation || 0
+    rotation: c.rotation || 0,
+    isDropped: c.isDropped || false,
+    sizeMultiplier: c.sizeMultiplier || 1.0
   }));
   
 io.emit('gameState', {
   serverDeltaMs: delta,
+  serverMode: SERVER_MODE,
   players: cleanPlayers,
   bots: cleanBots,
   coins: cleanCoins,
   timestamp: now,
-  goldenVaultFloor: gameState.goldenVaultFloor,
-  exhaustedTierCount: gameState.exhaustedTiers.size
+  goldenVaultFloor: IS_PAID_SERVER ? gameState.goldenVaultFloor : 0,
+  exhaustedTierCount: IS_PAID_SERVER ? gameState.exhaustedTiers.size : 0
 });
   
 
@@ -3133,20 +4071,114 @@ io.emit('gameState', {
 // STARTUP
 // ============================================================================
 server.listen(PORT, () => {
-  console.log(`â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—`);
-  console.log(`â•‘   MIBS.GG - HYBRID BEST OF BOTH CHECK THIS OUT?!?  â•‘`);
-  console.log(`â• â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•£`);
-  console.log(`â•‘ Port: ${PORT.toString().padEnd(28)}â•‘`);
-  console.log(`â•‘ Version: ${gameConstants.version.padEnd(23)}â•‘`);
-  console.log(`â•‘ Tick Rateology: 60 TPS (Slither.io)   â•‘`);
-  console.log(`â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•`);
-  
+  console.log(`╔═══════════════════════════════════════╗`);
+  console.log(`║   MIBS.GG — ${SERVER_MODE.toUpperCase()} SERVER`.padEnd(40) + `║`);
+  console.log(`╠═══════════════════════════════════════╣`);
+  console.log(`║   Mode: ${IS_PAID_SERVER ? 'PAID (economy ON)' : 'FREE (economy OFF)'}`.padEnd(40) + `║`);
+  console.log(`║   Port: ${PORT}`.padEnd(40) + `║`);
+  console.log(`║   Bots: ${MAX_BOTS}`.padEnd(40) + `║`);
+  console.log(`║   Version: ${gameConstants.version}`.padEnd(40) + `║`);
+  console.log(`║   Tick Rate: 60 TPS`.padEnd(40) + `║`);
+  console.log(`╚═══════════════════════════════════════╝`);
+
   initializeGame();
 });
 
+
+// ✅ Only start economy systems on paid server
+if (IS_PAID_SERVER) {
+ goldenHourManager = new GoldenHourManager(gameConstants, io, gameState, {
+      stateBackup, feeManager, payouts, auditLog, refreshPocketedTotal
+    });
+    queueManager = new QueueManager(io, gameConstants, {
+      supabase,
+      privyService: rewards.privy,
+      auditLog,
+      feeManager,
+      gameState,
+    });
+
+    // Refund any orphaned queue entries from a previous crash
+    queueManager.recoverAndRefund();
+
+    // Wire queueManager into goldenHourManager
+    goldenHourManager.queueManager = queueManager;
+    goldenHourManager.drainQueueFn = drainQueueToArena;
+
+    console.log(`✅ PAID SERVER: Golden Hour + Queue Manager initialized`);
+} else {
+    console.log(`🎮 FREE SERVER: Economy systems DISABLED (no payouts, no queue, no yard time)`);
+}
 // ============================================================================
 // YARD BROADCAST â€” Lobby live stats (every 3 seconds)
 // ============================================================================
+// ============================================================================
+// GOLDEN YARD TIME — Schedule calculator
+// ============================================================================
+function getGoldenYardTimeStatus() {
+  const gyt = gameConstants.goldenYardTime;
+  if (!gyt || !gyt.enabled) {
+    return { isOpen: true, timeRemaining: null, timeUntilOpen: null, opensAt: null };
+  }
+
+  const tz = gyt.schedule.timezone || 'Australia/Adelaide';
+  const now = new Date();
+
+  // Get current time in the server's configured timezone
+  const formatter = new Intl.DateTimeFormat('en-AU', {
+    timeZone: tz, hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: false
+  });
+  const parts = formatter.formatToParts(now);
+  const h = parseInt(parts.find(p => p.type === 'hour').value);
+  const m = parseInt(parts.find(p => p.type === 'minute').value);
+  const s = parseInt(parts.find(p => p.type === 'second').value);
+
+  const nowMinutes = h * 60 + m;
+  const startMinutes = gyt.schedule.startHour * 60 + (gyt.schedule.startMinute || 0);
+  const endMinutes = startMinutes + gyt.schedule.durationMinutes;
+
+  const isOpen = nowMinutes >= startMinutes && nowMinutes < endMinutes;
+
+  const formatCountdown = (totalSecs) => {
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const formatTime12h = (mins) => {
+    let hr = Math.floor(mins / 60) % 24;
+    const mn = mins % 60;
+    const ampm = hr >= 12 ? 'PM' : 'AM';
+    hr = hr % 12 || 12;
+    return `${hr}:${String(mn).padStart(2, '0')} ${ampm}`;
+  };
+
+  if (isOpen) {
+    const remainingSecs = (endMinutes * 60) - (nowMinutes * 60 + s);
+    return {
+      isOpen: true,
+      timeRemaining: formatCountdown(remainingSecs),
+      timeUntilOpen: null,
+      opensAt: formatTime12h(startMinutes),
+    };
+  } else {
+    let secsUntilOpen;
+    if (nowMinutes < startMinutes) {
+      secsUntilOpen = (startMinutes * 60) - (nowMinutes * 60 + s);
+    } else {
+      // Past end — next opening is tomorrow
+      secsUntilOpen = ((24 * 60 - nowMinutes) + startMinutes) * 60 - s;
+    }
+    return {
+      isOpen: false,
+      timeRemaining: null,
+      timeUntilOpen: formatCountdown(secsUntilOpen),
+      opensAt: formatTime12h(startMinutes),
+    };
+  }
+}
+
 setInterval(() => {
   const playerCount = Object.keys(gameState.players).length;
   const botCount = gameState.bots ? gameState.bots.length : 0;
@@ -3168,20 +4200,72 @@ setInterval(() => {
 
   const top5 = allEntities.slice(0, 5);
 
-io.emit('yard-update', {
+// Get Goldn Yard Time data from feeManager
+  const yardTime = feeManager.getYardTimeData();
+
+  // Resolve leader name from current players/bots
+  let yardTimeLeaderName = null;
+  if (yardTime.leader) {
+    // Search connected sockets for matching privyUserId
+    for (const [sockId, sock] of io.sockets.sockets) {
+      if (sock.privyUserId === yardTime.leader.playerId) {
+        const player = gameState.players[sockId];
+        if (player) yardTimeLeaderName = player.name;
+        break;
+      }
+    }
+  }
+
+// Calculate total arena value (sum of all live bounties)
+  const arenaValue = allEntities.reduce((sum, e) => sum + (e.bounty || 0), 0);
+
+  io.emit('yard-update', {
     playing: totalPlaying,
-    queue: 0,
-    max: 40,
-    totalWon: 0,
-    leaderboard: top5,
-    vaultFloor: gameState.goldenVaultFloor || 0
+    max: gameConstants.arena.maxPlayers || 40,
+queueLength: queueManager ? queueManager.getLength() : 0,
+    queueMax: gameConstants.economy?.queue?.maxQueueSize || 100,
+    queuePreview: queueManager ? queueManager.getQueuePreview() : [],
+    arenaValue: arenaValue,
+pocketedValue: gameState.cachedPocketedTotal || 0,    leaderboard: top5,
+    vaultFloor: gameState.goldenVaultFloor || 0,
+   goldenHour: goldenHourManager ? goldenHourManager.getStatus() : getGoldenYardTimeStatus(),
+    pocketedLeaderboard: [], // TODO: read from pocketManager once built
+    yardTime: {
+      pool: yardTime.pool,
+      leaderName: yardTimeLeaderName,
+      leaderKills: yardTime.leader?.kills || 0,
+      minutesRemaining: yardTime.minutesRemaining,
+      playsLast24h: yardTime.playsLast24h,
+    }
   });
 }, 3000);
 
+// ── Refresh cached pocketed total from Supabase (called on GYT close + startup) ──
+async function refreshPocketedTotal() {
+  try {
+    const { data, error } = await supabase
+      .from('pocketed_mibs')
+      .select('bounty')
+      .eq('status', 'active');
+    if (error) throw error;
+    gameState.cachedPocketedTotal = data.reduce((sum, row) => sum + (row.bounty || 0), 0);
+    console.log(`🎱 Cached pocketed total: $${gameState.cachedPocketedTotal.toFixed(2)}`);
+  } catch (err) {
+    console.warn(`⚠️ Could not refresh pocketed total: ${err.message}`);
+  }
+}
+// Populate on startup
+refreshPocketedTotal();
 
 async function gracefulShutdown(signal) {
-  console.log(`ðŸ›‘ ${signal} received â€” graceful shutdown...`);
+  console.log(`\n🛑 ${signal} received — graceful shutdown...`);
   
+// Refund all queued players before shutting down
+  if (queueManager && queueManager.getLength() > 0) {
+    console.log('💸 Refunding queued players before shutdown...');
+    await queueManager.refundAll('SERVER_SHUTDOWN');
+  }
+
   // Save state before exit
   try {
     await stateBackup.save();
@@ -3190,7 +4274,9 @@ async function gracefulShutdown(signal) {
     console.error('âš ï¸  Final backup failed:', err.message);
   }
   
-  // Clean up intervals
+// Clean up intervals
+if (goldenHourManager) goldenHourManager.destroy();
+  if (queueManager) queueManager.destroy();
   stateBackup.destroy();
   auditLog.destroy();
   rewards.destroy();
