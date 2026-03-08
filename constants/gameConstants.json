@@ -2,10 +2,11 @@
 {
   "version": "3.1.0-clean",
   
-  "arena": {
+ "arena": {
     "radius": 3000,
     "diameter": 6000,
-    "spawnMinDistance": 800
+    "spawnMinDistance": 800,
+    "maxPlayers": 40
   },
   
   "movement": {
@@ -46,10 +47,10 @@
   "shadowSizeMultiplier": 0.95
 },
   
-  "peewee": {
+ "peewee": {
     "growthValue": 1,
-    "radius": 20,
-    "targetWidth": 40,
+    "radius": 16,
+    "targetWidth": 32,
     "mass": 1.0,
     "friction": 0.975,
     "initialRollSpeedMin": 5,
@@ -164,6 +165,10 @@
     "currency": "USDC",
     "usdcMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
     "usdcDecimals": 6,
+    "security": {
+      "commitment": "confirmed",
+      "maxTxAgeSecs": 300
+    },
 
     "buyIn": {
       "amountUsdc": 1.10,
@@ -200,11 +205,11 @@
 
     "promoGrant": {
       "amountUsdc": 3.30,
-      "maxGrants": 500,
+      "maxGrants": 10,
       "requiresDiscord": true,
       "withdrawalLock": {
         "minPaidGames": 20,
-        "orBalanceBelowUsdc": 1.10
+        "orBalanceBelowUsdc": 0.10
       }
     },
 
@@ -214,6 +219,16 @@
       "double_xp": 2,
       "custom_trail": 5,
       "name_color": 2
+    },
+
+"queue": {
+      "maxQueueSize": 100,
+      "ttawPerSkip": 1,
+      "estimatedWaitPerSlot": 15,
+      "broadcastIntervalMs": 2000,
+      "refundOnGytEnd": true,
+      "refundOnCrash": true,
+"voluntaryLeaveRefundUsdc": 1.00
     },
 
     "payouts": {
@@ -244,9 +259,9 @@
       "topBountiesCount": 3
     },
 
-    "security": {
+"security": {
       "maxBuyInAgeSecs": 300,
-      "commitment": "finalized",
+      "commitment": "confirmed",
       "minAliveBeforeBountyTransferMs": 30000
     }
   },
@@ -308,7 +323,7 @@
 "goldenVault": {
     "passiveTaxRate": 0.10,
     "instantCashRate": 0.20,
-    "taxExemptMaxBounty": 1,
+    "taxExemptMaxBounty": 2,
     "jackpotThreshold": 1000000,
     "vaultFloors": [
       {"tierThreshold": 50, "vaultFloor": 20},
@@ -347,6 +362,65 @@
     ]
   },
 
+"goldenYardTime": {
+    "enabled": true,
+ "schedule": {
+      "startHour": 22,
+      "startMinute": 30,
+      "startSecond": 0,
+      "durationMinutes": 230,
+      "timezone": "Australia/Adelaide"
+    },
+    "arena": {
+      "shrinkStartMinutes": 0,
+      "shrinkSpeedMultiplier": 0,
+      "enabled": false
+    },
+    "countdown": {
+      "dramaticSeconds": 10,
+      "warningMinutes": 5
+    }
+  },
+
+  "pocketing": {
+    "enabled": true,
+    "maxPocketedMibs": 3,
+    "freeNights": 3,
+    "decayRatePerNight": 0.10,
+    "decayRecycleToHourlyPrize": 1.0,
+    "minBountyBeforeCleanup": 0.01,
+    "maxPocketedPerPlayer": 5
+  },
+
+  "themedNights": {
+    "enabled": true,
+    "schedule": {
+      "monday":    { "metric": "biggestSingleKill", "label": "Sniper Night",    "emoji": "🎯" },
+      "tuesday":   { "metric": "mostKills",         "label": "Rampage Night",   "emoji": "💀" },
+      "wednesday": { "metric": "biggestSize",        "label": "Titan Night",     "emoji": "🗿" },
+      "thursday":  { "metric": "longestSurvival",    "label": "Endurance Night", "emoji": "⏱️" },
+      "friday":    { "metric": "goldenBonus",        "label": "Golden Night",    "emoji": "👑" },
+      "saturday":  { "metric": "goldenBonus",        "label": "Golden Night",    "emoji": "👑" },
+      "sunday":    { "metric": "none",               "label": "Rest Day",        "emoji": "😴" }
+    },
+    "goldenNightMultiplier": 2.0,
+    "goldenNightDurationMultiplier": 2.0,
+    "bonusPoolSource": "hourlyPrize"
+  },
+
+  "boulder": {
+    "tokenMint": "",
+    "perPaidPlay": 1,
+    "perKillBonus": 0.5,
+    "dailyEarnCap": 100,
+    "freeBoulders": ["GREENGOBLIN", "BLUEBOLT", "BANANASWIRL"],
+    "unlockCosts": {
+      "common": 50,
+      "rare": 150,
+      "legendary": 500
+    }
+  },
+
 
   "ranks": [
     {"maxKills": 0, "label": "NOOB"},
@@ -358,31 +432,50 @@
   ],
   
 "pickupThemes": {
-  "GALAXY1": {"key": "GALAXY1", "isShooter": true, "isSmallie": true},
-  "PEARLYWHITE": {"key": "PEARLYWHITE", "isShooter": true, "isSmallie": true},
-  "USA1": {"key": "USA1", "isShooter": true, "isSmallie": true},
-  "FRANCE1": {"key": "FRANCE1", "isShooter": true, "isSmallie": true},
-  "BANANASWIRL": {"key": "BANANASWIRL", "isShooter": true, "isSmallie": true},
-  "BLUEMOON": {"key": "BLUEMOON", "isShooter": true, "isSmallie": true},
-  "CANADA": {"key": "CANADA", "isShooter": true, "isSmallie": true},
-  "CATSEYEBLUEYELLOW": {"key": "CATSEYEBLUEYELLOW", "isShooter": true, "isSmallie": true},
-  "CATSEYEGREENBLUE": {"key": "CATSEYEGREENBLUE", "isShooter": true, "isSmallie": true},
-  "CATSEYEGREENORANGE": {"key": "CATSEYEGREENORANGE", "isShooter": true, "isSmallie": true},
-  "CHINA": {"key": "CHINA", "isShooter": true, "isSmallie": true},
-  "GOLDENMIB": {"key": "GOLDENMIB", "isShooter": true, "isSmallie": false},
-  "KOIFISH": {"key": "KOIFISH", "isShooter": true, "isSmallie": true},
-  "STARDUSTGREEN": {"key": "STARDUSTGREEN", "isShooter": true, "isSmallie": true},
-  "UNICORN": {"key": "UNICORN", "isShooter": true, "isSmallie": true},
-  "HALO": {"key": "HALO", "isShooter": true, "isSmallie": true},
-  "BLUEBOLT": {"key": "BLUEBOLT", "isShooter": true, "isSmallie": true},
-  "BRAZIL": {"key": "BRAZIL", "isShooter": true, "isSmallie": true},
-  "FIRESTORM": {"key": "FIRESTORM", "isShooter": true, "isSmallie": true},
-  "GLASSIE": {"key": "GLASSIE", "isShooter": true, "isSmallie": true},
-  "HAWAII": {"key": "HAWAII", "isShooter": true, "isSmallie": true},
-  "INDIA": {"key": "INDIA", "isShooter": true, "isSmallie": true},
-  "NEONDREAM": {"key": "NEONDREAM", "isShooter": true, "isSmallie": true},
-  "PANTHER": {"key": "PANTHER", "isShooter": true, "isSmallie": true},
-  "STARSPANGLED": {"key": "STARSPANGLED", "isShooter": true, "isSmallie": true},
-  "SUNSET": {"key": "SUNSET", "isShooter": true, "isSmallie": true}
+  "GALAXY1":            { "key": "GALAXY1",            "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "PEARLYWHITE":        { "key": "PEARLYWHITE",        "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "AUSSIE3":            { "key": "AUSSIE3",            "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "BANANASWIRL":        { "key": "BANANASWIRL",        "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "BLUEBOLT":           { "key": "BLUEBOLT",           "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "BLUEMOON":           { "key": "BLUEMOON",           "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "BRAZIL":             { "key": "BRAZIL",             "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "CANADA":             { "key": "CANADA",             "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "CHINA":              { "key": "CHINA",              "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "CHINA2":             { "key": "CHINA2",             "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "CLOUD9":             { "key": "CLOUD9",             "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "Cobra":              { "key": "Cobra",              "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "FIRESTORM":          { "key": "FIRESTORM",          "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "FRANCE1":            { "key": "FRANCE1",            "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "GLASSIE":            { "key": "GLASSIE",            "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "GOLDEN":             { "key": "GOLDEN",             "isShooter": true,  "isSmallie": false, "rarity": "legendary" },
+  "GOLDENMIB":          { "key": "GOLDENMIB",          "isShooter": true,  "isSmallie": false, "rarity": "legendary" },
+  "Gold3":              { "key": "Gold3",              "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "GOLDYGOLD":          { "key": "GOLDYGOLD",          "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "GREENGOBLIN":        { "key": "GREENGOBLIN",        "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "HALO":               { "key": "HALO",               "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "HAWAII":             { "key": "HAWAII",             "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "INDIA":              { "key": "INDIA",              "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "KOIFISH":            { "key": "KOIFISH",            "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "LIGHTNING1":         { "key": "LIGHTNING1",         "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "Memes":              { "key": "Memes",              "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "Memes2":             { "key": "Memes2",             "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "NEONDREAM":          { "key": "NEONDREAM",          "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "NORDIC":             { "key": "NORDIC",             "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "PANTHER":            { "key": "PANTHER",            "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "PINKY":              { "key": "PINKY",              "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "RAINBOW":            { "key": "RAINBOW",            "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "RUBYRED":            { "key": "RUBYRED",            "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "STARDUSTGREEN":      { "key": "STARDUSTGREEN",      "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "STARSPANGLED":       { "key": "STARSPANGLED",       "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "Steely":             { "key": "Steely",             "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "SUNSET":             { "key": "SUNSET",             "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "TRUMP2":             { "key": "TRUMP2",             "isShooter": true,  "isSmallie": true,  "rarity": "legendary" },
+  "UNICORN":            { "key": "UNICORN",            "isShooter": true,  "isSmallie": true,  "rarity": "rare" },
+  "USA":                { "key": "USA",                "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+  "USA1":               { "key": "USA1",               "isShooter": true,  "isSmallie": true,  "rarity": "common" },
+
+  "CATSEYEBLUEYELLOW":  { "key": "CATSEYEBLUEYELLOW",  "isShooter": false, "isSmallie": false, "isPeewee": true,  "rarity": "peewee" },
+  "CATSEYEGREENBLUE":   { "key": "CATSEYEGREENBLUE",   "isShooter": false, "isSmallie": false, "isPeewee": true,  "rarity": "peewee" },
+  "CATSEYEGREENORANGE": { "key": "CATSEYEGREENORANGE", "isShooter": false, "isSmallie": false, "isPeewee": true,  "rarity": "peewee" }
 }
 }
