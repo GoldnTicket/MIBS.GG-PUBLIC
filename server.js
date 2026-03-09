@@ -41,7 +41,7 @@ const spendVerifier = new TokenSpendVerifier(rewards.privy, gameConstants);
 const AuditLog = require('./auditLog');
 const StateBackup = require('./stateBackup');
 
-const auditLog = new AuditLog(null, gameConstants);
+const auditLog = new AuditLog(null, gameConstants, rewards.privy);
 const stateBackup = new StateBackup(payouts, feeManager, spendVerifier, null, gameConstants);
 // ── Goldn Yard Time Engine (requires io, wired after server.listen) ──
 const GoldenHourManager = require('./goldenHourManager');
@@ -151,7 +151,7 @@ const TICK_RATE = 1000 / 60; // ✅ 60 TPS (Slither.io standard)
 const SERVER_MODE = process.env.SERVER_MODE || 'free'; // 'paid' or 'free'
 const IS_PAID_SERVER = SERVER_MODE === 'paid';
 const MAX_BOTS = IS_PAID_SERVER ? 0 : (gameConstants.bot?.count ?? 0);
-const MAX_COINS = 300;
+const MAX_COINS = 500;
 const PLAYER_TIMEOUT = 15000;
 
 const SPATIAL_GRID_SIZE = gameConstants.collision?.gridSizePx || 64;
@@ -194,6 +194,8 @@ if (SMALLIE_TYPES.length === 0) {
 
 console.log(`✅ Marble types: ${MARBLE_TYPES.length} shooters | ${SMALLIE_TYPES.length} smallies`);
 const respawnReservations = new Map();
+
+const activeDepositWatchers = new Map(); // walletAddress → { wsId, startedAt }
 
 // ============================================================================
 // GAME STATE
@@ -1065,24 +1067,6 @@ function checkWallCollisions() {
       hitLocation = { x: marble.x, y: marble.y };
     }
     
-    // Check body segments
-    if (!hitWall && marble.pathBuffer && marble.pathBuffer.samples.length > 1) {
-      const segmentSpacing = 20;
-      const bodyLength = marble.lengthScore * 2;
-      const numSegments = Math.floor(bodyLength / segmentSpacing);
-      
-      for (let i = 1; i <= numSegments; i++) {
-        const sample = marble.pathBuffer.sampleBack(i * segmentSpacing);
-        const segmentRadius = leadRadius * 0.9;
-        const segmentDist = Math.sqrt(sample.x * sample.x + sample.y * sample.y);
-        
-        if (segmentDist + segmentRadius > gameConstants.arena.radius) {
-          hitWall = true;
-          hitLocation = { x: sample.x, y: sample.y };
-          break;
-        }
-      }
-    }
     
     if (hitWall) {
       let creditTo = null;
@@ -1137,14 +1121,11 @@ function checkCoinCollisions() {
       
       // âœ… COLLECTION: If touching marble head
       if (dist < marbleRadius + coin.radius) {
-        marble.lengthScore += coin.growthValue;
+      marble.lengthScore += coin.growthValue;
         gameState.coins.splice(i, 1);
+        spawnCoin(); // fill-as-eaten — instantly replace consumed peewee
         
-        // âœ… FIX: Log coin consumption
-        if (gameState.coins.length % 10 === 0) {
-          console.log(`ðŸ¬ Coin eaten! Remaining: ${gameState.coins.length}/${MAX_COINS}`);
-        }
-        break;
+              break;
       }
       
       // âœ… SUCTION: Pull toward marble (Slither.io style)
@@ -2501,8 +2482,8 @@ for (let i = 0; i < coinsToSpawn; i++) {
   // ✅ FIX: DELETE IMMEDIATELY - no setImmediate delay!
   delete gameState.players[marble.id];
 
-  // ═══ VAULT KEEPER: If golden marble died with no killer and nobody left ═══
-  if (!killerId && marble.isGolden && (marble.bounty || 0) > 0) {
+// ═══ VAULT KEEPER: Last entity leaves with bounty — always preserve it ═══
+  if (!killerId && (marble.bounty || 0) > 0) {
     const anyoneLeft = [
       ...Object.values(gameState.players).filter(p => p.alive),
       ...gameState.bots.filter(b => b.alive)
@@ -2581,7 +2562,7 @@ function _prepareSpawn(socket, data) {
       socket.emit('spawnRejected', { message: 'Spawn timeout — please try again.' });
       socket.disconnect(true);
     }
-  }, 12000);
+  }, 45000);
 }
 
 io.on('connection', (socket) => {
@@ -2653,15 +2634,31 @@ coins: gameState.coins.map(c => ({
 // ── DEPOSIT WATCHER: Subscribe to player wallet on auth ──
   socket._depositSubs = { sol: null, usdc: null, lastSol: null, lastUsdc: null };
 
-  async function startDepositWatcher(walletAddress) {
+async function startDepositWatcher(walletAddress) {
     const conn = rewards.privy.connection;
     const { PublicKey } = require('@solana/web3.js');
     const { getAssociatedTokenAddress, getAccount } = require('@solana/spl-token');
     const ownerPubkey = new PublicKey(walletAddress);
     const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 
-    // Stop any existing subs for this socket
-    stopDepositWatcher();
+    // ✅ Step 1: Always clear THIS socket's existing listeners first
+    if (socket._depositSubs.sol !== null) {
+      try { conn.removeAccountChangeListener(socket._depositSubs.sol); } catch {}
+      socket._depositSubs.sol = null;
+    }
+    if (socket._depositSubs.usdc !== null) {
+      try { conn.removeAccountChangeListener(socket._depositSubs.usdc); } catch {}
+      socket._depositSubs.usdc = null;
+    }
+
+    // ✅ Step 2: Guard — only one watcher per wallet address across all sockets
+    if (activeDepositWatchers.has(walletAddress)) {
+      console.log(`👁️ Deposit watcher already active for ${walletAddress.slice(0, 8)}... — skipping duplicate`);
+      return;
+    }
+
+    // ✅ Step 3: Claim slot BEFORE any awaits (sync — no race condition)
+    activeDepositWatchers.set(walletAddress, { startedAt: Date.now() });
 
     // Seed initial balances
     try {
@@ -2749,7 +2746,7 @@ if (now - lastDetect < 10000 && Math.abs(diff - lastDiff) < 0.1) {
     }
   }
 
-  function stopDepositWatcher() {
+function stopDepositWatcher(walletAddress) {
     const conn = rewards.privy.connection;
     if (socket._depositSubs.sol !== null) {
       try { conn.removeAccountChangeListener(socket._depositSubs.sol); } catch {}
@@ -2759,6 +2756,8 @@ if (now - lastDetect < 10000 && Math.abs(diff - lastDiff) < 0.1) {
       try { conn.removeAccountChangeListener(socket._depositSubs.usdc); } catch {}
       socket._depositSubs.usdc = null;
     }
+    // ── Always clear the watcher guard, regardless of which subs were active ──
+    if (walletAddress) activeDepositWatchers.delete(walletAddress);
   }
   
 // â”€â”€ $TTAW: Authenticate with Privy â”€â”€
@@ -3006,7 +3005,12 @@ socket.isPaidSession = true;
       }
 
       socket.emit('buyInConfirmed', { amount: buyInUsdc, txSignature: data.txSignature });
-      console.log(`💵 USDC Buy-in verified: ${socket.privyUserId} | ${receivedUsdc.toFixed(2)} USDC | TX: ${data.txSignature.slice(0, 16)}...`);
+   console.log(`\n💵 ══════════════════════════════════════`);
+      console.log(`💵  BUY-IN RECEIVED: $${receivedUsdc.toFixed(2)} USDC`);
+      console.log(`💵  Player: ${gameState.players[socket.id]?.name || 'joining...'}`);
+      console.log(`💵  Wallet: ${socket._walletAddress?.slice(0, 8) || 'unknown'}...`);
+      console.log(`💵  TX: ${data.txSignature.slice(0, 20)}...`);
+      console.log(`💵 ══════════════════════════════════════\n`);
 
       // Backup state after money event
       stateBackup.saveNow();
@@ -3301,11 +3305,12 @@ console.log('✅ [Supabase] Player synced:', data.name);
   });
   
   // âœ… INPUT-BASED with sequence tracking (from Doc 14)
-  socket.on('playerInput', (data) => {
+socket.on('playerInput', (data) => {
     const player = gameState.players[socket.id];
     if (!player || !player.alive) return;
-    
-if (typeof data.targetAngle !== 'number' || 
+
+
+    if (typeof data.targetAngle !== 'number' || 
         isNaN(data.targetAngle) || 
         !isFinite(data.targetAngle)) {
       return;
@@ -3480,7 +3485,7 @@ socket.on('disconnect', async () => {
       }
     }
     // After player cleanup below, we'll drain the queue
- stopDepositWatcher(); 
+stopDepositWatcher(socket._walletAddress || null);
     console.log(`📌 Player disconnected: ${socket.id.substring(0, 8)}`);
     
     const player = gameState.players[socket.id];
@@ -3731,6 +3736,10 @@ const dt = 1 / TICK_RATE; // âœ… Fixed timestep: 1/60 = 0.01667s
   // ========================================
   Object.values(gameState.players).forEach(player => {
     if (!player.alive) return;
+
+// ✅ Boost drops temporarily disabled — re-enable after coin physics audit
+    if (!player.boosting) player._boostDropAccum = 0;
+
       // âœ… REMOVE SPAWN PROTECTION AFTER 3 SECONDS
   if (player.spawnProtection && Date.now() - player.spawnTime > 2000) {
     player.spawnProtection = false;
@@ -3754,6 +3763,8 @@ const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 
   const speed = (player.boosting ? baseSpeed * boostMult : baseSpeed) * goldenBoost;
     
     // ✅ Exponential boost growth loss — bigger chains lose MORE when boosting
+
+
     if (player.boosting && player.lengthScore > gameConstants.player.startLength) {
       const boostCfg = gameConstants.boost || {};
       const base = boostCfg.growthLossBase || 3;
@@ -3763,7 +3774,6 @@ const goldenBoost = player.isGolden ? (gameConstants.golden?.speedMultiplier || 
       const loss = base * Math.pow(sizeRatio, exp);
       player.lengthScore = Math.max(gameConstants.player.startLength, player.lengthScore - loss * dt);
     }
-    
     // Calculate new position
     const newX = player.x + Math.cos(player.angle) * speed * dt;
     const newY = player.y + Math.sin(player.angle) * speed * dt;
